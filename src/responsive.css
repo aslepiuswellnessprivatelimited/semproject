@@ -1,0 +1,41 @@
+
+/* Responsive refinements for compact screens and narrow laptop ratios. */
+html, body, #root { min-height: 100%; }
+body { overflow-x: hidden; }
+@media (max-width: 1180px) and (min-width: 681px) {
+  .app-shell { padding: 14px; }
+  .app-panel { min-height: calc(100vh - 28px); }
+  .content-layout { grid-template-columns: 48px minmax(0, 1fr) 330px; gap: 10px; padding-left: 14px; padding-right: 14px; }
+  .topbar { padding: 0 16px; }
+  .brand-mark { width: 170px; }
+  .top-nav button { padding-left: 13px; padding-right: 13px; }
+  .location-chip { display: none; }
+  .checkout-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 118px; }
+}
+@media (max-width: 680px) {
+  .auth-shell { min-height: 100svh; padding: 16px; align-items: start; padding-top: max(16px, 5vh); }
+  .auth-card { width: min(100%, 430px); padding: 27px 22px; }
+  .auth-card .eyebrow { margin-top: 34px; }
+  .auth-card h1 { font-size: clamp(27px, 8vw, 31px); }
+  .auth-card form { margin-top: 20px; gap: 12px; }
+  .simple-page { min-height: 100svh; padding: 20px 14px; }
+  .simple-content { margin-top: 40px; }
+  .journey-heading { gap: 12px; }
+  .journey-heading h1 { font-size: clamp(18px, 5vw, 22px); }
+  .bus-stage { margin-inline: -5px; }
+  .route-points { align-items: flex-start; }
+  .route-line { margin-top: 17px; }
+  .route-meta { grid-template-columns: repeat(2, 1fr); row-gap: 13px; }
+  .route-meta .meta-divider { display: none; }
+  .route-point strong { white-space: normal; line-height: 1.25; }
+  .booking-panel { padding: 10px 8px 8px; }
+  .legend-row { flex-wrap: wrap; row-gap: 6px; }
+  .booking-body { min-width: 0; }
+  .seat-grid { gap: 7px 10px; }
+  .seat { font-size: 8px; }
+  .fare-summary { grid-template-columns: repeat(2, 1fr); }
+  .summary-seats { grid-column: span 2; }
+  .checkout-row { grid-template-columns: 1fr; }
+  .phone-input { min-height: 45px; }
+  .buy-button { min-height: 44px; }
+}
