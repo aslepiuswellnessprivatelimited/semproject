@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -18,6 +18,8 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
+import { createBooking, getSeats, saveSession, searchTrips, type ApiTrip, type ApiUser } from '@/api';
+import { AuthScreen, SchedulesView, SimplePage, TripsView } from '@/auth-and-pages';
 import { createSeatArray, countAvailableSeats, toggleSeat, type Seat } from '@/utils/seatArray';
 
 const routes = [
@@ -76,11 +78,25 @@ const navItems = [
 
 function App() {
   const [activeRoute, setActiveRoute] = useState(routes[0]);
+  const [activeTripId, setActiveTripId] = useState('t1');
   const [activeNav, setActiveNav] = useState('Tickets');
+  const [token, setToken] = useState(() => localStorage.getItem('tictic_token'));
+  const [user, setUser] = useState<ApiUser | null>(() => { const value = localStorage.getItem('tictic_user'); return value ? JSON.parse(value) as ApiUser : null; });
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [seats, setSeats] = useState<Seat[]>(() => createSeatArray(7, routes[0].fare));
+  const [passengerName, setPassengerName] = useState('');
   const [phone, setPhone] = useState('');
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [bookingMessage, setBookingMessage] = useState('');
+
+  useEffect(() => {
+    if (!token) return;
+    searchTrips('Chennai', activeRoute.destination).then((trips) => {
+      const trip = trips[0];
+      if (trip) applyApiTrip(trip);
+    }).catch(() => undefined);
+  }, [token, activeRoute.destination]);
 
   const selectedSeats = useMemo(() => seats.filter((seat) => seat.status === 'selected'), [seats]);
   const availableSeats = countAvailableSeats(seats);
@@ -90,13 +106,17 @@ function App() {
   const discount = selectedSeats.length >= 2 ? 120 : 0;
   const total = subtotal + serviceCharge + tax - discount;
 
+  function applyApiTrip(trip: ApiTrip) {
+    const nextRoute = { id: trip.id, origin: trip.origin, destination: trip.destination, operator: trip.operatorName, service: trip.serviceNumber, type: trip.busType, departure: trip.departure, arrival: trip.arrival, duration: trip.duration, fare: trip.fare, boarding: trip.boardingPoints[0] ?? `${trip.origin} Bus Stand`, dropping: trip.droppingPoints[0] ?? `${trip.destination} Bus Stand` };
+    setActiveTripId(trip.id);
+    setActiveRoute(nextRoute);
+    getSeats(trip.id).then((data) => setSeats(data.seats.map((seat) => ({ seatNumber: seat.seatNumber, fare: seat.fare, status: seat.status === 'AVAILABLE' ? 'available' : seat.status === 'BOOKED' ? 'sold' : 'blocked' })))).catch(() => undefined);
+  }
+
   function chooseRoute(destination: string) {
     const nextRoute = routes.find((route) => route.destination === destination) ?? routes[0];
     setActiveRoute(nextRoute);
-    setSeats(createSeatArray(7, nextRoute.fare).map((seat, index) => ({
-      ...seat,
-      status: index === 2 || index === 7 ? 'sold' : index === 26 ? 'blocked' : 'available',
-    })));
+    searchTrips('Chennai', destination).then((trips) => trips[0] ? applyApiTrip(trips[0]) : undefined).catch(() => setSeats(createSeatArray(7, nextRoute.fare)));
   }
 
   function handleSeatClick(seat: Seat) {
@@ -105,9 +125,24 @@ function App() {
     setSeats((currentSeats) => toggleSeat(currentSeats, seat.seatNumber));
   }
 
-  function handleBook() {
-    if (selectedSeats.length > 0 && phone.replace(/\D/g, '').length >= 10) setShowConfirmation(true);
+  async function handleBook() {
+    const bookingPassengerName = passengerName.trim() || user?.name.trim() || '';
+    if (selectedSeats.length === 0 || bookingPassengerName.length < 2 || phone.replace(/\D/g, '').length !== 10 || !user) return;
+    try {
+      const booking = await createBooking({ tripId: activeTripId, seatNumbers: selectedSeats.map((seat) => seat.seatNumber), passengerName: bookingPassengerName, phone: phone.replace(/\D/g, '') });
+      setBookingMessage(`Booking ${booking.id} confirmed for ${booking.seatNumbers.join(', ')}`);
+      setShowConfirmation(true);
+      const data = await getSeats(activeTripId);
+      setSeats(data.seats.map((seat) => ({ seatNumber: seat.seatNumber, fare: seat.fare, status: seat.status === 'AVAILABLE' ? 'available' : seat.status === 'BOOKED' ? 'sold' : 'blocked' })));
+    } catch (error) {
+      setBookingMessage(error instanceof Error ? error.message : 'Booking could not be completed');
+    }
   }
+
+  if (!token) return <AuthScreen mode={authMode} onModeChange={setAuthMode} onAuthenticated={(session) => { saveSession(session); setToken(session.token); setUser(session.user); }} />;
+  if (activeNav === 'Trips') return <TripsView onBack={() => setActiveNav('Tickets')} />;
+  if (activeNav === 'Schedules') return <SchedulesView onBack={() => setActiveNav('Tickets')} onChoose={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
+  if (activeNav === 'Support') return <SimplePage title="Travel support" description="Need help with a booking? Our travel desk is available for every TicTic journey." action="Back to tickets" onAction={() => setActiveNav('Tickets')} />;
 
   return (
     <main className="app-shell">
@@ -137,7 +172,7 @@ function App() {
             </div>
             <div className="rail-bottom">
               <button className="rail-button"><UsersRound size={17} /></button>
-              <div className="avatar">AK</div>
+              <div className="avatar">{user?.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase() ?? 'TT'}</div>
             </div>
           </aside>
 
@@ -210,14 +245,15 @@ function App() {
                 <div className="summary-item summary-total"><strong>₹{total}</strong><small>Total Payable</small></div>
               </div>
             </div>
-            <div className="checkout-row"><label className="phone-input"><span>Passenger's Contact Number</span><input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+91 98765 43210" inputMode="tel" /></label><button className="buy-button" onClick={handleBook}>Buy Now <ArrowRight size={17} /></button></div>
+            <div className="checkout-row"><label className="phone-input"><span>Passenger Name</span><input value={passengerName} onChange={(event) => setPassengerName(event.target.value)} placeholder={user?.name ?? 'Full name'} /></label><label className="phone-input"><span>Passenger's Contact Number</span><input value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit number" inputMode="numeric" /></label><button className="buy-button" onClick={handleBook}>Buy Now <ArrowRight size={17} /></button></div>
             {selectedSeats.length === 0 && <p className="form-hint">Choose up to 6 seats to continue</p>}
-            {phone.length > 0 && phone.replace(/\D/g, '').length < 10 && <p className="form-error">Enter a valid 10-digit contact number</p>}
+            {phone.length > 0 && phone.length !== 10 && <p className="form-error">Enter a valid 10-digit contact number</p>}
+            {selectedSeats.length > 0 && passengerName.trim().length < 2 && <p className="form-error">Enter the passenger name before booking</p>}
           </section>
         </div>
       </section>
 
-      {showConfirmation && <div className="modal-backdrop" onClick={() => setShowConfirmation(false)}><div className="confirmation-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowConfirmation(false)} aria-label="Close"><X size={18} /></button><div className="success-icon"><Check size={28} /></div><p className="eyebrow">Reservation ready</p><h2>Your seats are held.</h2><p>Review complete. Booking reference <strong>TT-{Math.floor(100000 + Math.random() * 900000)}</strong> has been created for {selectedSeats.map((seat) => seat.seatNumber).join(', ')} at ₹{total}.</p><button className="modal-button" onClick={() => setShowConfirmation(false)}>Done <ArrowRight size={16} /></button></div></div>}
+      {showConfirmation && <div className="modal-backdrop" onClick={() => setShowConfirmation(false)}><div className="confirmation-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowConfirmation(false)} aria-label="Close"><X size={18} /></button><div className="success-icon"><Check size={28} /></div><p className="eyebrow">Reservation ready</p><h2>Your seats are held.</h2><p>{bookingMessage || `Booking confirmed for ${selectedSeats.map((seat) => seat.seatNumber).join(', ')} at ₹${total}.`}</p><button className="modal-button" onClick={() => setShowConfirmation(false)}>Done <ArrowRight size={16} /></button></div></div>}
     </main>
   );
 }
