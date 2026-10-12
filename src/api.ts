@@ -9,18 +9,8 @@ export interface ApiUser { id: string; name: string; email: string; role: string
 export interface ApiTrip { id: string; origin: string; destination: string; duration: string; operatorName: string; serviceNumber: string; busType: string; departure: string; arrival: string; fare: number; availableSeats: number; boardingPoints: string[]; droppingPoints: string[] }
 export interface ApiSeat { seatNumber: string; status: 'AVAILABLE' | 'BOOKED' | 'BLOCKED'; passengerName: string | null; fare: number }
 export interface ApiBooking { id: string; bookingReference: string; tripId: string; seatNumbers: string[]; passengerName: string; phone: string; totalAmount: number; status: string; createdAt: string }
-
-const FALLBACK_TRIPS: ApiTrip[] = [
-  { id: 't1', origin: 'Chennai', destination: 'Madurai', duration: '8h 00m', operatorName: 'Shyamoli NR Travels', serviceNumber: '1731–Madurai Express', busType: 'AC Sleeper', departure: '09:30 PM', arrival: '05:30 AM', fare: 1240, availableSeats: 25, boardingPoints: ['Chennai Koyambedu'], droppingPoints: ['Madurai Mattuthavani'] },
-  { id: 't2', origin: 'Chennai', destination: 'Coimbatore', duration: '9h 00m', operatorName: 'KPN Travels', serviceNumber: '2084–Western Line', busType: 'AC Seater', departure: '08:15 PM', arrival: '05:15 AM', fare: 990, availableSeats: 25, boardingPoints: ['Chennai CMBT'], droppingPoints: ['Coimbatore Gandhipuram'] },
-  { id: 't3', origin: 'Chennai', destination: 'Trichy', duration: '6h 45m', operatorName: 'Parveen Travels', serviceNumber: '1108–Kaveri Night Rider', busType: 'Semi Sleeper', departure: '10:00 PM', arrival: '04:45 AM', fare: 820, availableSeats: 25, boardingPoints: ['Chennai Koyambedu'], droppingPoints: ['Trichy Central'] },
-];
-
-function createFallbackSeats(fare: number): ApiSeat[] {
-  return Array.from({ length: 28 }, (_, i) => ({ seatNumber: `C${Math.floor(i / 4) + 1}${(i % 4) + 1}`, status: i === 2 || i === 7 ? 'BOOKED' : i === 26 ? 'BLOCKED' : 'AVAILABLE', passengerName: i === 2 || i === 7 ? 'Sample Passenger' : null, fare }));
-}
-
-function isNetworkError(error: unknown): boolean { return error instanceof TypeError || (error instanceof Error && /fetch|network|connect|Failed to fetch/i.test(error.message)); }
+export interface AdminBooking { id: string; bookingReference: string; userId: string; tripId: string; origin: string; destination: string; operatorName: string; seatNumbers: string[]; passengerName: string; phone: string; totalAmount: number; status: string; createdAt: string }
+export interface AdminStats { totalBookings: number; confirmedBookings: number; cancelledBookings: number; totalRevenue: number; totalTrips: number; totalRoutes: number; totalUsers: number }
 
 function friendlyMessage(error: unknown, fallback: string): string {
   if (error instanceof Error) {
@@ -28,7 +18,9 @@ function friendlyMessage(error: unknown, fallback: string): string {
     if (/Invalid login credentials/i.test(msg)) return 'Email or password is incorrect';
     if (/User already registered/i.test(msg)) return 'An account with that email already exists';
     if (/Password should be at least/i.test(msg)) return 'Password must be at least 6 characters';
-    return isNetworkError(error) ? fallback : msg;
+    if (/Admin access required/i.test(msg)) return 'You do not have admin privileges';
+    if (/Invalid admin access code/i.test(msg)) return 'The admin access code is incorrect';
+    return msg;
   }
   return fallback;
 }
@@ -52,72 +44,186 @@ export async function register(name: string, email: string, phone: string, passw
   return { token: session.access_token, user: profile };
 }
 
+export async function adminLogin(email: string, password: string, adminCode: string): Promise<{ token: string; user: ApiUser }> {
+  const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+  if (error) throw new Error(friendlyMessage(error, 'Unable to sign in. Please check your connection.'));
+  const session = data.session!;
+  const { error: promoteError } = await supabase.rpc('promote_to_admin', { p_admin_code: adminCode });
+  if (promoteError) {
+    await supabase.auth.signOut();
+    throw new Error(friendlyMessage(promoteError, 'Admin authentication failed.'));
+  }
+  const profile = await fetchProfile(session.user.id);
+  if (profile.role !== 'admin') {
+    await supabase.auth.signOut();
+    throw new Error('Admin access could not be verified.');
+  }
+  return { token: session.access_token, user: profile };
+}
+
 async function fetchProfile(userId: string): Promise<ApiUser> {
   const { data, error } = await supabase.from('profiles').select('id, display_name, phone, role').eq('id', userId).maybeSingle();
   if (error || !data) {
     const { data: authUser } = await supabase.auth.getUser();
     return { id: userId, name: authUser.user?.user_metadata?.display_name ?? 'Passenger', email: authUser.user?.email ?? '', role: 'user', phone: authUser.user?.user_metadata?.phone ?? '' };
   }
-  return { id: data.id, name: data.display_name, email: '', role: data.role, phone: data.phone };
+  const { data: authUser } = await supabase.auth.getUser();
+  return { id: data.id, name: data.display_name, email: authUser.user?.email ?? '', role: data.role, phone: data.phone };
 }
 
 export async function searchTrips(from: string, to: string): Promise<ApiTrip[]> {
-  try {
-    const { data, error } = await supabase.from('routes').select('id, origin, destination, duration, boarding_points, dropping_points, trips!inner(id, operator_name, service_number, bus_type, departure, arrival, fare)').ilike('origin', `%${from}%`).ilike('destination', `%${to}%`).eq('active', true);
-    if (error) throw error;
-    const trips: ApiTrip[] = [];
-    for (const route of data ?? []) {
-      for (const trip of (route as unknown as { trips: Record<string, unknown>[] }).trips) {
-        trips.push({ id: trip.id as string, origin: route.origin, destination: route.destination, duration: route.duration, operatorName: trip.operator_name as string, serviceNumber: trip.service_number as string, busType: trip.bus_type as string, departure: trip.departure as string, arrival: trip.arrival as string, fare: Number(trip.fare), availableSeats: 25, boardingPoints: route.boarding_points ?? [], droppingPoints: route.dropping_points ?? [] });
-      }
-    }
-    return trips.length > 0 ? trips : FALLBACK_TRIPS.filter((t) => t.origin.toLowerCase().includes(from.toLowerCase()) && t.destination.toLowerCase().includes(to.toLowerCase()));
-  } catch {
-    return FALLBACK_TRIPS.filter((t) => t.origin.toLowerCase().includes(from.toLowerCase()) && t.destination.toLowerCase().includes(to.toLowerCase()));
-  }
+  const { data: routeData, error: routeError } = await supabase
+    .from('routes')
+    .select('id, origin, destination, duration, boarding_points, dropping_points')
+    .ilike('origin', `%${from}%`)
+    .ilike('destination', `%${to}%`)
+    .eq('active', true);
+
+  if (routeError) throw routeError;
+  if (!routeData || routeData.length === 0) return [];
+
+  const routeIds = routeData.map((r) => r.id);
+  const { data: tripData, error: tripError } = await supabase
+    .from('trips')
+    .select('id, route_id, operator_name, service_number, bus_type, departure, arrival, fare')
+    .in('route_id', routeIds)
+    .eq('active', true);
+
+  if (tripError) throw tripError;
+  if (!tripData || tripData.length === 0) return [];
+
+  const trips: ApiTrip[] = tripData.map((trip) => {
+    const route = routeData.find((r) => r.id === trip.route_id);
+    return {
+      id: trip.id,
+      origin: route?.origin ?? '',
+      destination: route?.destination ?? '',
+      duration: route?.duration ?? '',
+      operatorName: trip.operator_name,
+      serviceNumber: trip.service_number,
+      busType: trip.bus_type,
+      departure: trip.departure,
+      arrival: trip.arrival,
+      fare: Number(trip.fare),
+      availableSeats: 25,
+      boardingPoints: route?.boarding_points ?? [],
+      droppingPoints: route?.dropping_points ?? [],
+    };
+  });
+
+  return trips;
 }
 
 export async function getSeats(tripId: string): Promise<{ tripId: string; seats: ApiSeat[]; availableCount: number }> {
-  try {
-    const { data, error } = await supabase.from('trip_seats').select('seat_number, status, passenger_name, fare').eq('trip_id', tripId).order('seat_number');
-    if (error) throw error;
-    if (!data || data.length === 0) {
-      const trip = FALLBACK_TRIPS.find((t) => t.id === tripId);
-      const seats = createFallbackSeats(trip?.fare ?? 1000);
-      return { tripId, seats, availableCount: seats.filter((s) => s.status === 'AVAILABLE').length };
-    }
-    const seats: ApiSeat[] = data.map((row) => ({ seatNumber: row.seat_number as string, status: (row.status as string).toUpperCase() as ApiSeat['status'], passengerName: row.passenger_name as string | null, fare: Number(row.fare) }));
-    return { tripId, seats, availableCount: seats.filter((s) => s.status === 'AVAILABLE').length };
-  } catch {
-    const trip = FALLBACK_TRIPS.find((t) => t.id === tripId);
-    const seats = createFallbackSeats(trip?.fare ?? 1000);
-    return { tripId, seats, availableCount: seats.filter((s) => s.status === 'AVAILABLE').length };
-  }
+  const { data, error } = await supabase
+    .from('trip_seats')
+    .select('seat_number, status, passenger_name, fare')
+    .eq('trip_id', tripId)
+    .order('seat_number');
+
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('No seats found for this trip. Please try another route.');
+
+  const seats: ApiSeat[] = data.map((row) => ({
+    seatNumber: row.seat_number as string,
+    status: (row.status as string).toUpperCase() as ApiSeat['status'],
+    passengerName: row.passenger_name as string | null,
+    fare: Number(row.fare),
+  }));
+  return { tripId, seats, availableCount: seats.filter((s) => s.status === 'AVAILABLE').length };
 }
 
 export async function createBooking(payload: { tripId: string; seatNumbers: string[]; passengerName: string; phone: string }): Promise<ApiBooking> {
-  const { data, error } = await supabase.rpc('book_trip', { p_trip_id: payload.tripId, p_seat_numbers: payload.seatNumbers, p_passenger_name: payload.passengerName, p_phone: payload.phone });
+  const { data, error } = await supabase.rpc('book_trip', {
+    p_trip_id: payload.tripId,
+    p_seat_numbers: payload.seatNumbers,
+    p_passenger_name: payload.passengerName,
+    p_phone: payload.phone,
+  });
   if (error) throw new Error(friendlyMessage(error, 'Unable to complete booking. Please try again.'));
   const row = data as unknown as Record<string, unknown>;
-  return { id: row.id as string, bookingReference: row.booking_reference as string, tripId: row.trip_id as string, seatNumbers: row.seat_numbers as string[], passengerName: row.passenger_name as string, phone: row.phone as string, totalAmount: Number(row.total_amount), status: row.status as string, createdAt: row.created_at as string };
+  return {
+    id: row.id as string,
+    bookingReference: row.booking_reference as string,
+    tripId: row.trip_id as string,
+    seatNumbers: row.seat_numbers as string[],
+    passengerName: row.passenger_name as string,
+    phone: row.phone as string,
+    totalAmount: Number(row.total_amount),
+    status: row.status as string,
+    createdAt: row.created_at as string,
+  };
 }
 
 export async function getMyBookings(): Promise<ApiBooking[]> {
-  try {
-    const { data, error } = await supabase.from('bookings').select('id, booking_reference, trip_id, seat_numbers, passenger_name, phone, total_amount, status, created_at').order('created_at', { ascending: false });
-    if (error) throw error;
-    if (!data || data.length === 0) return [];
-    return data.map((row) => ({ id: row.id as string, bookingReference: row.booking_reference as string, tripId: row.trip_id as string, seatNumbers: row.seat_numbers as string[], passengerName: row.passenger_name as string, phone: row.phone as string, totalAmount: Number(row.total_amount), status: (row.status as string).toUpperCase(), createdAt: row.created_at as string }));
-  } catch {
-    return [];
-  }
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('id, booking_reference, trip_id, seat_numbers, passenger_name, phone, total_amount, status, created_at')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  if (!data || data.length === 0) return [];
+
+  return data.map((row) => ({
+    id: row.id as string,
+    bookingReference: row.booking_reference as string,
+    tripId: row.trip_id as string,
+    seatNumbers: row.seat_numbers as string[],
+    passengerName: row.passenger_name as string,
+    phone: row.phone as string,
+    totalAmount: Number(row.total_amount),
+    status: (row.status as string).toUpperCase(),
+    createdAt: row.created_at as string,
+  }));
 }
 
 export async function cancelBooking(id: string): Promise<ApiBooking> {
   const { data, error } = await supabase.rpc('cancel_booking', { p_booking_id: id });
   if (error) throw new Error(friendlyMessage(error, 'Unable to cancel booking. Please try again.'));
   const row = data as unknown as Record<string, unknown>;
-  return { id: row.id as string, bookingReference: row.booking_reference as string, tripId: row.trip_id as string, seatNumbers: row.seat_numbers as string[], passengerName: row.passenger_name as string, phone: row.phone as string, totalAmount: Number(row.total_amount), status: (row.status as string).toUpperCase(), createdAt: row.created_at as string };
+  return {
+    id: row.id as string,
+    bookingReference: row.booking_reference as string,
+    tripId: row.trip_id as string,
+    seatNumbers: row.seat_numbers as string[],
+    passengerName: row.passenger_name as string,
+    phone: row.phone as string,
+    totalAmount: Number(row.total_amount),
+    status: (row.status as string).toUpperCase(),
+    createdAt: row.created_at as string,
+  };
+}
+
+export async function getAllBookings(): Promise<AdminBooking[]> {
+  const { data, error } = await supabase.rpc('get_all_bookings');
+  if (error) throw new Error(friendlyMessage(error, 'Unable to load bookings. Admin access required.'));
+  if (!data) return [];
+  return (data as unknown as Record<string, unknown>[]).map((row) => ({
+    id: row.id as string,
+    bookingReference: row.booking_reference as string,
+    userId: row.user_id as string,
+    tripId: row.trip_id as string,
+    origin: row.origin as string,
+    destination: row.destination as string,
+    operatorName: row.operator_name as string,
+    seatNumbers: row.seat_numbers as string[],
+    passengerName: row.passenger_name as string,
+    phone: row.phone as string,
+    totalAmount: Number(row.total_amount),
+    status: (row.status as string).toUpperCase(),
+    createdAt: row.created_at as string,
+  }));
+}
+
+export async function adminCancelBooking(id: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_cancel_booking', { p_booking_id: id });
+  if (error) throw new Error(friendlyMessage(error, 'Unable to cancel booking.'));
+}
+
+export async function getAdminStats(): Promise<AdminStats> {
+  const { data, error } = await supabase.rpc('get_admin_stats');
+  if (error) throw new Error(friendlyMessage(error, 'Unable to load stats. Admin access required.'));
+  return data as unknown as AdminStats;
 }
 
 export async function signOut(): Promise<void> { await supabase.auth.signOut(); }

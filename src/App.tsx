@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { createBooking, getSeats, restoreSession, saveSession, signOut, searchTrips, type ApiTrip, type ApiUser } from '@/api';
-import { AuthScreen, SchedulesView, SimplePage, TripsView } from '@/auth-and-pages';
+import { AdminView, AuthScreen, SchedulesView, SimplePage, TripsView, VehiclesView } from '@/auth-and-pages';
 import { createSeatArray, countAvailableSeats, toggleSeat, type Seat } from '@/utils/seatArray';
 import { LogOut } from 'lucide-react';
 
@@ -75,6 +75,7 @@ const navItems = [
   { label: 'Schedules', icon: CalendarDays },
   { label: 'Trips', icon: WalletCards },
   { label: 'Support', icon: CircleHelp },
+  { label: 'Vehicles', icon: BusFront },
 ];
 
 function App() {
@@ -157,6 +158,8 @@ function App() {
   if (activeNav === 'Trips') return <TripsView onBack={() => setActiveNav('Tickets')} />;
   if (activeNav === 'Schedules') return <SchedulesView onBack={() => setActiveNav('Tickets')} onChoose={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
   if (activeNav === 'Support') return <SimplePage title="Travel support" description="Need help with a booking? Our travel desk is available for every TicTic journey." action="Back to tickets" onAction={() => setActiveNav('Tickets')} />;
+  if (activeNav === 'Vehicles') return <VehiclesView onBack={() => setActiveNav('Tickets')} />;
+  if (activeNav === 'Admin' && user?.role === 'admin') return <AdminView onBack={() => setActiveNav('Tickets')} user={user} />;
 
   return (
     <main className="app-shell">
@@ -167,7 +170,7 @@ function App() {
           <div className="brand-mark"><Ticket size={24} strokeWidth={2.4} /><span>TicTic</span></div>
           <button className="mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={20} /></button>
           <nav className={`top-nav ${menuOpen ? 'is-open' : ''}`}>
-            {['Buy Tickets', 'Schedules', 'Trips', 'Vehicles'].map((item, index) => (
+            {['Buy Tickets', 'Schedules', 'Trips', 'Vehicles', ...(user?.role === 'admin' ? ['Admin'] : [])].map((item, index) => (
               <button className={index === 0 ? 'top-nav-active' : ''} key={item} onClick={() => setActiveNav(item)}>{item}</button>
             ))}
           </nav>
