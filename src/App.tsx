@@ -18,9 +18,10 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
-import { createBooking, getSeats, saveSession, searchTrips, type ApiTrip, type ApiUser } from '@/api';
+import { createBooking, getSeats, restoreSession, saveSession, signOut, searchTrips, type ApiTrip, type ApiUser } from '@/api';
 import { AuthScreen, SchedulesView, SimplePage, TripsView } from '@/auth-and-pages';
 import { createSeatArray, countAvailableSeats, toggleSeat, type Seat } from '@/utils/seatArray';
+import { LogOut } from 'lucide-react';
 
 const routes = [
   {
@@ -80,7 +81,7 @@ function App() {
   const [activeRoute, setActiveRoute] = useState(routes[0]);
   const [activeTripId, setActiveTripId] = useState('t1');
   const [activeNav, setActiveNav] = useState('Tickets');
-  const [token, setToken] = useState(() => localStorage.getItem('tictic_token'));
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('tictic_token'));
   const [user, setUser] = useState<ApiUser | null>(() => { const value = localStorage.getItem('tictic_user'); return value ? JSON.parse(value) as ApiUser : null; });
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [seats, setSeats] = useState<Seat[]>(() => createSeatArray(7, routes[0].fare));
@@ -89,6 +90,18 @@ function App() {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [bookingMessage, setBookingMessage] = useState('');
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const restored = await restoreSession();
+      if (!mounted) return;
+      if (restored) { setToken(restored.token); setUser(restored.user); }
+      setAuthReady(true);
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -139,6 +152,7 @@ function App() {
     }
   }
 
+  if (!authReady) return <main className="auth-shell"><div className="auth-card" style={{ textAlign: 'center' }}><div className="auth-brand"><Ticket size={25} /><span>TicTic</span></div><p className="auth-copy">Loading your journey…</p></div></main>;
   if (!token) return <AuthScreen mode={authMode} onModeChange={setAuthMode} onAuthenticated={(session) => { saveSession(session); setToken(session.token); setUser(session.user); }} />;
   if (activeNav === 'Trips') return <TripsView onBack={() => setActiveNav('Tickets')} />;
   if (activeNav === 'Schedules') return <SchedulesView onBack={() => setActiveNav('Tickets')} onChoose={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
@@ -159,6 +173,7 @@ function App() {
           </nav>
           <div className="location-chip"><MapPin size={14} /><span>Your location:</span><strong>Chennai</strong></div>
           <button className="icon-button" aria-label="Settings"><Settings size={17} /></button>
+          <button className="icon-button" aria-label="Sign out" title="Sign out" onClick={async () => { await signOut(); localStorage.removeItem('tictic_token'); localStorage.removeItem('tictic_user'); setToken(null); setUser(null); }}><LogOut size={17} /></button>
         </header>
 
         <div className="content-layout">
