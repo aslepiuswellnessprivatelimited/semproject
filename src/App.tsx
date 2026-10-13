@@ -12,6 +12,7 @@ import {
   MapPin,
   Menu,
   Navigation,
+  Search,
   Settings,
   Ticket,
   UsersRound,
@@ -71,6 +72,7 @@ const routes = [
 const trendingRoutes = ['Coimbatore', 'Madurai', 'Trichy', 'Salem', 'Tirunelveli', 'Erode', 'Thanjavur', 'Vellore'];
 const navItems = [
   { label: 'Tickets', icon: Ticket },
+  { label: 'Search', icon: Search },
   { label: 'Routes', icon: Navigation },
   { label: 'Schedules', icon: CalendarDays },
   { label: 'Trips', icon: WalletCards },
@@ -108,12 +110,10 @@ function App() {
 
   useEffect(() => {
     if (!token) return;
-    setBookingError('');
-    searchTrips('Chennai', activeRoute.destination).then((trips) => {
-      const trip = trips[0];
-      if (trip) applyApiTrip(trip);
-    }).catch(() => undefined);
-  }, [token, activeRoute.destination]);
+    searchTrips('Chennai', routes[0].destination).then((trips) => {
+      if (trips[0]) applyApiTrip(trips[0]);
+    }).catch(() => setBookingError('Unable to load the starting trip. Use Search to choose another route.'));
+  }, [token]);
 
   const selectedSeats = useMemo(() => seats.filter((seat) => seat.status === 'selected'), [seats]);
   const availableSeats = countAvailableSeats(seats);
@@ -170,7 +170,7 @@ function App() {
   if (!authReady) return <main className="auth-shell"><div className="auth-card" style={{ textAlign: 'center' }}><div className="auth-brand"><Ticket size={25} /><span>TicTic</span></div><p className="auth-copy">Loading your journey…</p></div></main>;
   if (!token) return <AuthScreen mode={authMode} onModeChange={setAuthMode} onAuthenticated={(session) => { saveSession(session); setToken(session.token); setUser(session.user); }} />;
   if (activeNav === 'Trips') return <TripsView onBack={() => setActiveNav('Tickets')} />;
-  if (activeNav === 'Schedules') return <SchedulesView onBack={() => setActiveNav('Tickets')} onChoose={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
+  if (activeNav === 'Search' || activeNav === 'Routes' || activeNav === 'Schedules') return <SchedulesView onBack={() => setActiveNav('Tickets')} onChoose={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
   if (activeNav === 'Support') return <SimplePage title="Travel support" description="Need help with a booking? Our travel desk is available for every TicTic journey." action="Back to tickets" onAction={() => setActiveNav('Tickets')} />;
   if (activeNav === 'Vehicles') return <VehiclesView onBack={() => setActiveNav('Tickets')} onChooseTrip={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
   if (activeNav === 'Admin' && user?.role === 'admin') return <AdminView onBack={() => setActiveNav('Tickets')} user={user} />;
@@ -184,7 +184,7 @@ function App() {
           <div className="brand-mark"><Ticket size={24} strokeWidth={2.4} /><span>TicTic</span></div>
           <button className="mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={20} /></button>
           <nav className={`top-nav ${menuOpen ? 'is-open' : ''}`}>
-            {['Buy Tickets', 'Schedules', 'Trips', 'Vehicles', ...(user?.role === 'admin' ? ['Admin'] : [])].map((item, index) => (
+            {['Buy Tickets', 'Search', 'Schedules', 'Trips', 'Vehicles', ...(user?.role === 'admin' ? ['Admin'] : [])].map((item, index) => (
               <button className={index === 0 ? 'top-nav-active' : ''} key={item} onClick={() => setActiveNav(item)}>{item}</button>
             ))}
           </nav>

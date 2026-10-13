@@ -15,6 +15,7 @@ export interface AdminStats { totalBookings: number; confirmedBookings: number; 
 function friendlyMessage(error: unknown, fallback: string): string {
   if (error instanceof Error) {
     const msg = error.message;
+    if (/Failed to fetch|fetch failed|network request failed/i.test(msg)) return 'Unable to connect to the booking service. Please refresh and try again.';
     if (/Invalid login credentials/i.test(msg)) return 'Email or password is incorrect';
     if (/User already registered/i.test(msg)) return 'An account with that email already exists';
     if (/Password should be at least/i.test(msg)) return 'Password must be at least 6 characters';
@@ -29,7 +30,7 @@ export async function login(email: string, password: string): Promise<{ token: s
   const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
   if (error) throw new Error(friendlyMessage(error, 'Unable to sign in. Please check your connection.'));
   const session = data.session!;
-  const profile = await fetchProfile(session.user.id);
+  const profile = await fetchProfile(session.user.id, session.user);
   return { token: session.access_token, user: profile };
 }
 
@@ -40,7 +41,7 @@ export async function register(name: string, email: string, phone: string, passw
   if (!session) throw new Error('Account created. Please sign in to continue.');
   const { error: profileError } = await supabase.from('profiles').insert({ id: session.user.id, display_name: name.trim(), phone });
   if (profileError && !profileError.message.includes('duplicate')) throw new Error('Account created but profile setup failed. Please try signing in.');
-  const profile = await fetchProfile(session.user.id);
+  const profile = await fetchProfile(session.user.id, session.user);
   return { token: session.access_token, user: profile };
 }
 
@@ -48,12 +49,17 @@ export async function adminLogin(email: string, password: string, adminCode: str
   const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
   if (error) throw new Error(friendlyMessage(error, 'Unable to sign in. Please check your connection.'));
   const session = data.session!;
-  const { error: promoteError } = await supabase.rpc('promote_to_admin', { p_admin_code: adminCode });
-  if (promoteError) {
-    await supabase.auth.signOut();
-    throw new Error(friendlyMessage(promoteError, 'Admin authentication failed.'));
+  let profile = await fetchProfile(session.user.id, session.user);
+
+  if (profile.role !== 'admin') {
+    const { error: promoteError } = await supabase.rpc('promote_to_admin', { p_admin_code: adminCode });
+    if (promoteError) {
+      await supabase.auth.signOut();
+      throw new Error(friendlyMessage(promoteError, 'Admin authentication failed.'));
+    }
+    profile = await fetchProfile(session.user.id, session.user);
   }
-  const profile = await fetchProfile(session.user.id);
+
   if (profile.role !== 'admin') {
     await supabase.auth.signOut();
     throw new Error('Admin access could not be verified.');
@@ -61,14 +67,14 @@ export async function adminLogin(email: string, password: string, adminCode: str
   return { token: session.access_token, user: profile };
 }
 
-async function fetchProfile(userId: string): Promise<ApiUser> {
+async function fetchProfile(userId: string, authUser?: { email?: string | null; user_metadata?: Record<string, unknown> }): Promise<ApiUser> {
   const { data, error } = await supabase.from('profiles').select('id, display_name, phone, role').eq('id', userId).maybeSingle();
+  const email = authUser?.email ?? '';
+  const metadata = authUser?.user_metadata ?? {};
   if (error || !data) {
-    const { data: authUser } = await supabase.auth.getUser();
-    return { id: userId, name: authUser.user?.user_metadata?.display_name ?? 'Passenger', email: authUser.user?.email ?? '', role: 'user', phone: authUser.user?.user_metadata?.phone ?? '' };
+    return { id: userId, name: typeof metadata.display_name === 'string' ? metadata.display_name : 'Passenger', email, role: 'user', phone: typeof metadata.phone === 'string' ? metadata.phone : '' };
   }
-  const { data: authUser } = await supabase.auth.getUser();
-  return { id: data.id, name: data.display_name, email: authUser.user?.email ?? '', role: data.role, phone: data.phone };
+  return { id: data.id, name: data.display_name, email, role: data.role, phone: data.phone };
 }
 
 export async function searchTrips(from: string, to: string): Promise<ApiTrip[]> {
@@ -280,7 +286,7 @@ export function clearSession(): void {
 export async function restoreSession(): Promise<{ token: string; user: ApiUser } | null> {
   const { data } = await supabase.auth.getSession();
   if (!data.session) return null;
-  const profile = await fetchProfile(data.session.user.id);
+  const profile = await fetchProfile(data.session.user.id, data.session.user);
   const session = { token: data.session.access_token, user: profile };
   saveSession(session);
   return session;

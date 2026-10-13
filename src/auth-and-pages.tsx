@@ -133,7 +133,7 @@ export function SchedulesView({ onBack, onChoose }: { onBack: () => void; onChoo
   }
 
   return (
-    <SimplePage title="Schedules" description="Find an intercity service across Tamil Nadu." action="Back to tickets" onAction={onBack}>
+    <SimplePage title="Search buses" description="Search live services by starting point and destination across Tamil Nadu." action="Back to tickets" onAction={onBack}>
       <form className="schedule-search" onSubmit={search}>
         <input value={from} onChange={(e) => setFrom(e.target.value)} placeholder="From" />
         <ArrowRight size={17} />
@@ -239,9 +239,9 @@ export function AdminView({ onBack, user }: { onBack: () => void; user: ApiUser 
   );
 }
 
-export const travelOperators = [
+const travelOperators = [
   { name: 'Parveen Travels', description: 'Major private fleet provider offering AC/non-AC sleeper and seater coaches for routes across South India.', fleet: ['AC Sleeper', 'AC Seater', 'Non-AC Sleeper'], routes: 'Chennai, Madurai, Coimbatore, Bengaluru' },
-  { name: 'KPN Travels INDIA Ltd', description: 'Connects Chennai with key cities like Bengaluru, Coimbatore, and Salem.', fleet: ['AC Sleeper', 'Semi Sleeper', 'Non-AC Seater'], routes: 'Chennai, Bengaluru, Coimbatore, Salem' },
+  { name: 'KPN Travels', description: 'Connects Chennai with key cities like Bengaluru, Coimbatore, and Salem.', fleet: ['AC Sleeper', 'Semi Sleeper', 'Non-AC Seater'], routes: 'Chennai, Bengaluru, Coimbatore, Salem' },
   { name: 'Orange Tours & Travels', description: 'Long-distance sleeper and multi-axle AC services.', fleet: ['Multi-Axle AC Sleeper', 'AC Sleeper', 'AC Seater'], routes: 'Chennai, Madurai, Trichy, Tirunelveli' },
   { name: 'Rathimeena Travels', description: 'Popular for routes connecting Chennai to Chidambaram, Kumbakonam, Tanjore, and Velankanni.', fleet: ['AC Seater', 'Non-AC Sleeper', 'Semi Sleeper'], routes: 'Chennai, Chidambaram, Kumbakonam, Tanjore, Velankanni' },
   { name: 'National Travels Madurai', description: 'Frequent connections between Chennai and southern Tamil Nadu hubs.', fleet: ['AC Sleeper', 'Non-AC Seater', 'Semi Sleeper'], routes: 'Chennai, Madurai, Tirunelveli, Nagercoil' },
