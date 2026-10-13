@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, BarChart3, BusFront, CalendarDays, CircleHelp, LoaderCircle, MapPin, Search, Shield, Ticket, TrendingUp, Users } from 'lucide-react';
-import { adminCancelBooking, adminLogin, cancelBooking, getAllBookings, getAdminStats, getMyBookings, login, register, searchTrips, type AdminBooking, type AdminStats, type ApiBooking, type ApiTrip, type ApiUser } from '@/api';
+import { FormEvent, useEffect, useState, type ReactNode } from 'react';
+import { adminCancelBooking, adminLogin, cancelBooking, getAllBookings, getAdminStats, getMyBookings, login, register, searchTrips, searchTripsByOperator, type AdminBooking, type AdminStats, type ApiBooking, type ApiTrip, type ApiUser } from '@/api';
 
 export type AuthSession = { token: string; user: ApiUser };
 
@@ -247,15 +247,34 @@ export const travelOperators = [
   { name: 'National Travels Madurai', description: 'Frequent connections between Chennai and southern Tamil Nadu hubs.', fleet: ['AC Sleeper', 'Non-AC Seater', 'Semi Sleeper'], routes: 'Chennai, Madurai, Tirunelveli, Nagercoil' },
 ];
 
-export function VehiclesView({ onBack }: { onBack: () => void }) {
+export function VehiclesView({ onBack, onChooseTrip }: { onBack: () => void; onChooseTrip: (trip: ApiTrip) => void }) {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [operatorTrips, setOperatorTrips] = useState<Record<string, ApiTrip[]>>({});
+  const [loadingOperator, setLoadingOperator] = useState<string | null>(null);
+  const [tripError, setTripError] = useState('');
+
+  async function toggleOperator(name: string) {
+    if (expanded === name) { setExpanded(null); return; }
+    setExpanded(name);
+    setTripError('');
+    if (operatorTrips[name]) return;
+    setLoadingOperator(name);
+    try {
+      const trips = await searchTripsByOperator(name);
+      setOperatorTrips((prev) => ({ ...prev, [name]: trips }));
+    } catch (reason) {
+      setTripError(reason instanceof Error ? reason.message : 'Unable to load routes for this operator.');
+    } finally {
+      setLoadingOperator(null);
+    }
+  }
 
   return (
-    <SimplePage title="Our travel partners" description="TicTic partners with Tamil Nadu's most trusted bus operators. Browse their fleets and find the right service for your journey." action="Back to tickets" onAction={onBack}>
+    <SimplePage title="Our travel partners" description="TicTic partners with Tamil Nadu's most trusted bus operators. Click an operator to see their available routes and book directly." action="Back to tickets" onAction={onBack}>
       <div className="operator-list">
         {travelOperators.map((operator) => (
-          <article className="operator-card" key={operator.name} onClick={() => setExpanded(expanded === operator.name ? null : operator.name)}>
-            <div className="operator-header">
+          <article className="operator-card" key={operator.name}>
+            <div className="operator-header" onClick={() => toggleOperator(operator.name)}>
               <div className="operator-icon"><BusFront size={22} /></div>
               <div className="operator-info">
                 <h3>{operator.name}</h3>
@@ -278,6 +297,24 @@ export function VehiclesView({ onBack }: { onBack: () => void }) {
                     </div>
                   ))}
                 </div>
+                <h4 className="operator-routes-heading">Routes & schedules</h4>
+                {loadingOperator === operator.name && <p className="empty-state">Loading routes…</p>}
+                {tripError && <p className="auth-error">{tripError}</p>}
+                {!loadingOperator && operatorTrips[operator.name]?.length === 0 && <p className="empty-state">No active routes found for this operator.</p>}
+                {!loadingOperator && operatorTrips[operator.name] && operatorTrips[operator.name].length > 0 && (
+                  <div className="schedule-list">
+                    {operatorTrips[operator.name].map((trip) => (
+                      <button className="schedule-item" key={trip.id} onClick={() => onChooseTrip(trip)}>
+                        <div>
+                          <span className="eyebrow">{trip.busType}</span>
+                          <h3>{trip.origin} <ArrowRight size={14} /> {trip.destination}</h3>
+                          <p>{trip.departure} · {trip.duration} · {trip.serviceNumber}</p>
+                        </div>
+                        <strong>₹{trip.fare}</strong>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </article>

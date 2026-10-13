@@ -226,6 +226,45 @@ export async function getAdminStats(): Promise<AdminStats> {
   return data as unknown as AdminStats;
 }
 
+export async function searchTripsByOperator(operatorName: string): Promise<ApiTrip[]> {
+  const { data: tripData, error: tripError } = await supabase
+    .from('trips')
+    .select('id, route_id, operator_name, service_number, bus_type, departure, arrival, fare')
+    .ilike('operator_name', operatorName)
+    .eq('active', true);
+
+  if (tripError) throw tripError;
+  if (!tripData || tripData.length === 0) return [];
+
+  const routeIds = [...new Set(tripData.map((t) => t.route_id))];
+  const { data: routeData, error: routeError } = await supabase
+    .from('routes')
+    .select('id, origin, destination, duration, boarding_points, dropping_points')
+    .in('id', routeIds)
+    .eq('active', true);
+
+  if (routeError) throw routeError;
+
+  return tripData.map((trip) => {
+    const route = routeData?.find((r) => r.id === trip.route_id);
+    return {
+      id: trip.id,
+      origin: route?.origin ?? '',
+      destination: route?.destination ?? '',
+      duration: route?.duration ?? '',
+      operatorName: trip.operator_name,
+      serviceNumber: trip.service_number,
+      busType: trip.bus_type,
+      departure: trip.departure,
+      arrival: trip.arrival,
+      fare: Number(trip.fare),
+      availableSeats: 25,
+      boardingPoints: route?.boarding_points ?? [],
+      droppingPoints: route?.dropping_points ?? [],
+    };
+  });
+}
+
 export async function signOut(): Promise<void> { await supabase.auth.signOut(); }
 
 export function saveSession(session: { token: string; user: ApiUser }): void {

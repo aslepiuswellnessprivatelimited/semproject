@@ -21,7 +21,7 @@ import {
 import { createBooking, getSeats, restoreSession, saveSession, signOut, searchTrips, type ApiTrip, type ApiUser } from '@/api';
 import { AdminView, AuthScreen, SchedulesView, SimplePage, TripsView, VehiclesView } from '@/auth-and-pages';
 import { createSeatArray, countAvailableSeats, toggleSeat, type Seat } from '@/utils/seatArray';
-import { LogOut } from 'lucide-react';
+import { LogOut, AlertCircle } from 'lucide-react';
 
 const routes = [
   {
@@ -80,7 +80,7 @@ const navItems = [
 
 function App() {
   const [activeRoute, setActiveRoute] = useState(routes[0]);
-  const [activeTripId, setActiveTripId] = useState('t1');
+  const [activeTripId, setActiveTripId] = useState<string | null>(null);
   const [activeNav, setActiveNav] = useState('Tickets');
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('tictic_token'));
   const [user, setUser] = useState<ApiUser | null>(() => { const value = localStorage.getItem('tictic_user'); return value ? JSON.parse(value) as ApiUser : null; });
@@ -91,6 +91,8 @@ function App() {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [bookingMessage, setBookingMessage] = useState('');
+  const [bookingError, setBookingError] = useState('');
+  const [bookingLoading, setBookingLoading] = useState(false);
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
@@ -106,6 +108,7 @@ function App() {
 
   useEffect(() => {
     if (!token) return;
+    setBookingError('');
     searchTrips('Chennai', activeRoute.destination).then((trips) => {
       const trip = trips[0];
       if (trip) applyApiTrip(trip);
@@ -142,14 +145,21 @@ function App() {
   async function handleBook() {
     const bookingPassengerName = passengerName.trim() || user?.name.trim() || '';
     if (selectedSeats.length === 0 || bookingPassengerName.length < 2 || phone.replace(/\D/g, '').length !== 10 || !user) return;
+    if (!activeTripId) { setBookingError('Please wait for the trip to load, then try again.'); return; }
+    setBookingError('');
+    setBookingLoading(true);
     try {
       const booking = await createBooking({ tripId: activeTripId, seatNumbers: selectedSeats.map((seat) => seat.seatNumber), passengerName: bookingPassengerName, phone: phone.replace(/\D/g, '') });
-      setBookingMessage(`Booking ${booking.id} confirmed for ${booking.seatNumbers.join(', ')}`);
+      setBookingMessage(`Booking ${booking.bookingReference} confirmed for seats ${booking.seatNumbers.join(', ')}. Total: ₹${booking.totalAmount}`);
       setShowConfirmation(true);
+      setPassengerName('');
+      setPhone('');
       const data = await getSeats(activeTripId);
       setSeats(data.seats.map((seat) => ({ seatNumber: seat.seatNumber, fare: seat.fare, status: seat.status === 'AVAILABLE' ? 'available' : seat.status === 'BOOKED' ? 'sold' : 'blocked' })));
     } catch (error) {
-      setBookingMessage(error instanceof Error ? error.message : 'Booking could not be completed');
+      setBookingError(error instanceof Error ? error.message : 'Booking could not be completed. Please try again.');
+    } finally {
+      setBookingLoading(false);
     }
   }
 
@@ -158,7 +168,7 @@ function App() {
   if (activeNav === 'Trips') return <TripsView onBack={() => setActiveNav('Tickets')} />;
   if (activeNav === 'Schedules') return <SchedulesView onBack={() => setActiveNav('Tickets')} onChoose={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
   if (activeNav === 'Support') return <SimplePage title="Travel support" description="Need help with a booking? Our travel desk is available for every TicTic journey." action="Back to tickets" onAction={() => setActiveNav('Tickets')} />;
-  if (activeNav === 'Vehicles') return <VehiclesView onBack={() => setActiveNav('Tickets')} />;
+  if (activeNav === 'Vehicles') return <VehiclesView onBack={() => setActiveNav('Tickets')} onChooseTrip={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
   if (activeNav === 'Admin' && user?.role === 'admin') return <AdminView onBack={() => setActiveNav('Tickets')} user={user} />;
 
   return (
@@ -263,10 +273,12 @@ function App() {
                 <div className="summary-item summary-total"><strong>₹{total}</strong><small>Total Payable</small></div>
               </div>
             </div>
-            <div className="checkout-row"><label className="phone-input"><span>Passenger Name</span><input value={passengerName} onChange={(event) => setPassengerName(event.target.value)} placeholder={user?.name ?? 'Full name'} /></label><label className="phone-input"><span>Passenger's Contact Number</span><input value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit number" inputMode="numeric" /></label><button className="buy-button" onClick={handleBook}>Buy Now <ArrowRight size={17} /></button></div>
+            <div className="checkout-row"><label className="phone-input"><span>Passenger Name</span><input value={passengerName} onChange={(event) => setPassengerName(event.target.value)} placeholder={user?.name ?? 'Full name'} /></label><label className="phone-input"><span>Passenger's Contact Number</span><input value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit number" inputMode="numeric" /></label><button className="buy-button" onClick={handleBook} disabled={bookingLoading || !activeTripId}>{bookingLoading ? 'Booking…' : 'Buy Now'} <ArrowRight size={17} /></button></div>
             {selectedSeats.length === 0 && <p className="form-hint">Choose up to 6 seats to continue</p>}
             {phone.length > 0 && phone.length !== 10 && <p className="form-error">Enter a valid 10-digit contact number</p>}
             {selectedSeats.length > 0 && passengerName.trim().length < 2 && <p className="form-error">Enter the passenger name before booking</p>}
+            {bookingError && <div className="booking-error-banner"><AlertCircle size={15} /><span>{bookingError}</span></div>}
+            {bookingLoading && <p className="form-hint">Processing your booking…</p>}
           </section>
         </div>
       </section>
