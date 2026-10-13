@@ -12,6 +12,7 @@ import {
   MapPin,
   Menu,
   Navigation,
+  Printer,
   Search,
   Settings,
   Ticket,
@@ -80,6 +81,23 @@ const navItems = [
   { label: 'Vehicles', icon: BusFront },
 ];
 
+type TicketDetails = {
+  bookingReference: string;
+  passengerName: string;
+  phone: string;
+  seatNumbers: string[];
+  totalAmount: number;
+  origin: string;
+  destination: string;
+  operatorName: string;
+  departure: string;
+  arrival: string;
+};
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] ?? character);
+}
+
 function App() {
   const [activeRoute, setActiveRoute] = useState(routes[0]);
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
@@ -93,6 +111,7 @@ function App() {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [bookingMessage, setBookingMessage] = useState('');
+  const [ticketDetails, setTicketDetails] = useState<TicketDetails | null>(null);
   const [bookingError, setBookingError] = useState('');
   const [bookingLoading, setBookingLoading] = useState(false);
   const [authReady, setAuthReady] = useState(false);
@@ -155,6 +174,7 @@ function App() {
     try {
       const booking = await createBooking({ tripId: activeTripId, seatNumbers: selectedSeats.map((seat) => seat.seatNumber), passengerName: bookingPassengerName, phone: phone.replace(/\D/g, '') });
       setBookingMessage(`Booking ${booking.bookingReference} confirmed for seats ${booking.seatNumbers.join(', ')}. Total: ₹${booking.totalAmount}`);
+      setTicketDetails({ bookingReference: booking.bookingReference, passengerName: bookingPassengerName, phone: phone.replace(/\D/g, ''), seatNumbers: booking.seatNumbers, totalAmount: booking.totalAmount, origin: activeRoute.origin, destination: activeRoute.destination, operatorName: activeRoute.operator, departure: activeRoute.departure, arrival: activeRoute.arrival });
       setShowConfirmation(true);
       setPassengerName('');
       setPhone('');
@@ -165,6 +185,17 @@ function App() {
     } finally {
       setBookingLoading(false);
     }
+  }
+
+  function printTicket() {
+    if (!ticketDetails) return;
+    const printWindow = window.open('', '_blank', 'width=760,height=900');
+    if (!printWindow) { setBookingError('Please allow pop-ups to print your ticket.'); return; }
+    const ticket = ticketDetails;
+    printWindow.document.write(`<!doctype html><html><head><title>TicTic Ticket ${escapeHtml(ticket.bookingReference)}</title><style>body{font-family:Arial,sans-serif;color:#26352a;padding:40px;max-width:680px;margin:auto}header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #dce8d5;padding-bottom:20px}h1{margin:0;font-size:28px}h2{margin:28px 0 8px;font-size:20px}.reference{color:#4a8654;font-weight:700;letter-spacing:.08em}.route{font-size:24px;font-weight:700;margin:18px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;border-top:1px solid #d9dfd5;padding-top:18px}.label{display:block;color:#778176;font-size:12px;margin-bottom:5px}.value{font-size:15px;font-weight:600}.total{margin-top:24px;padding:18px;background:#edf5e8;border-radius:12px;font-size:20px;font-weight:700}@media print{body{padding:0}}</style></head><body><header><h1>TicTic</h1><span class="reference">${escapeHtml(ticket.bookingReference)}</span></header><p class="route">${escapeHtml(ticket.origin)} → ${escapeHtml(ticket.destination)}</p><p>${escapeHtml(ticket.operatorName)}</p><div class="grid"><div><span class="label">Passenger</span><span class="value">${escapeHtml(ticket.passengerName)}</span></div><div><span class="label">Contact</span><span class="value">${escapeHtml(ticket.phone)}</span></div><div><span class="label">Seats</span><span class="value">${escapeHtml(ticket.seatNumbers.join(', '))}</span></div><div><span class="label">Departure / Arrival</span><span class="value">${escapeHtml(ticket.departure)} / ${escapeHtml(ticket.arrival)}</span></div></div><div class="total">Total paid: ₹${ticket.totalAmount}</div><p>Keep this ticket ready when boarding.</p></body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   }
 
   if (!authReady) return <main className="auth-shell"><div className="auth-card" style={{ textAlign: 'center' }}><div className="auth-brand"><Ticket size={25} /><span>TicTic</span></div><p className="auth-copy">Loading your journey…</p></div></main>;
@@ -287,7 +318,7 @@ function App() {
         </div>
       </section>
 
-      {showConfirmation && <div className="modal-backdrop" onClick={() => setShowConfirmation(false)}><div className="confirmation-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowConfirmation(false)} aria-label="Close"><X size={18} /></button><div className="success-icon"><Check size={28} /></div><p className="eyebrow">Reservation ready</p><h2>Your seats are held.</h2><p>{bookingMessage || `Booking confirmed for ${selectedSeats.map((seat) => seat.seatNumber).join(', ')} at ₹${total}.`}</p><button className="modal-button" onClick={() => setShowConfirmation(false)}>Done <ArrowRight size={16} /></button></div></div>}
+      {showConfirmation && <div className="modal-backdrop" onClick={() => setShowConfirmation(false)}><div className="confirmation-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowConfirmation(false)} aria-label="Close"><X size={18} /></button><div className="success-icon"><Check size={28} /></div><p className="eyebrow">Reservation ready</p><h2>Your seats are held.</h2><p>{bookingMessage}</p><div className="confirmation-actions"><button className="modal-button modal-button-secondary" onClick={printTicket}><Printer size={16} /> Print ticket</button><button className="modal-button" onClick={() => setShowConfirmation(false)}>Done <ArrowRight size={16} /></button></div></div></div>}
     </main>
   );
 }
