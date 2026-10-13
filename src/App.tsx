@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { createBooking, getSeats, restoreSession, saveSession, signOut, searchTrips, type ApiTrip, type ApiUser } from '@/api';
-import { AdminView, AuthScreen, SchedulesView, SimplePage, TripsView, VehiclesView } from '@/auth-and-pages';
+import { AdminView, AuthScreen, HomeDashboard, SchedulesView, SimplePage, TripsView, VehiclesView } from '@/auth-and-pages';
 import { createSeatArray, countAvailableSeats, toggleSeat, type Seat } from '@/utils/seatArray';
 import { LogOut, AlertCircle } from 'lucide-react';
 
@@ -101,7 +101,9 @@ function escapeHtml(value: string): string {
 function App() {
   const [activeRoute, setActiveRoute] = useState(routes[0]);
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
-  const [activeNav, setActiveNav] = useState('Tickets');
+  const [activeNav, setActiveNav] = useState('Home');
+  const [searchFrom, setSearchFrom] = useState('Chennai');
+  const [searchTo, setSearchTo] = useState('Madurai');
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('tictic_token'));
   const [user, setUser] = useState<ApiUser | null>(() => { const value = localStorage.getItem('tictic_user'); return value ? JSON.parse(value) as ApiUser : null; });
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -165,6 +167,15 @@ function App() {
     setSeats((currentSeats) => toggleSeat(currentSeats, seat.seatNumber));
   }
 
+  async function handleLogout() {
+    await signOut();
+    localStorage.removeItem('tictic_token');
+    localStorage.removeItem('tictic_user');
+    setToken(null);
+    setUser(null);
+    setActiveNav('Home');
+  }
+
   async function handleBook() {
     const bookingPassengerName = passengerName.trim() || user?.name.trim() || '';
     if (selectedSeats.length === 0 || bookingPassengerName.length < 2 || phone.replace(/\D/g, '').length !== 10 || !user) return;
@@ -199,12 +210,13 @@ function App() {
   }
 
   if (!authReady) return <main className="auth-shell"><div className="auth-card" style={{ textAlign: 'center' }}><div className="auth-brand"><Ticket size={25} /><span>TicTic</span></div><p className="auth-copy">Loading your journey…</p></div></main>;
-  if (!token) return <AuthScreen mode={authMode} onModeChange={setAuthMode} onAuthenticated={(session) => { saveSession(session); setToken(session.token); setUser(session.user); }} />;
-  if (activeNav === 'Trips') return <TripsView onBack={() => setActiveNav('Tickets')} />;
-  if (activeNav === 'Search' || activeNav === 'Routes' || activeNav === 'Schedules') return <SchedulesView onBack={() => setActiveNav('Tickets')} onChoose={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
-  if (activeNav === 'Support') return <SimplePage title="Travel support" description="Need help with a booking? Our travel desk is available for every TicTic journey." action="Back to tickets" onAction={() => setActiveNav('Tickets')} />;
-  if (activeNav === 'Vehicles') return <VehiclesView onBack={() => setActiveNav('Tickets')} onChooseTrip={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
-  if (activeNav === 'Admin' && user?.role === 'admin') return <AdminView onBack={() => setActiveNav('Tickets')} user={user} />;
+  if (!token) return <AuthScreen mode={authMode} onModeChange={setAuthMode} onAuthenticated={(session) => { saveSession(session); setToken(session.token); setUser(session.user); setActiveNav('Home'); }} />;
+  if (activeNav === 'Home') return <HomeDashboard user={user!} onSearch={(from, to) => { setSearchFrom(from); setSearchTo(to); setActiveNav('Search'); }} onNavigate={(destination) => setActiveNav(destination)} onLogout={handleLogout} />;
+  if (activeNav === 'Trips') return <TripsView onBack={() => setActiveNav('Home')} />;
+  if (activeNav === 'Search' || activeNav === 'Routes' || activeNav === 'Schedules') return <SchedulesView initialFrom={searchFrom} initialTo={searchTo} onBack={() => setActiveNav('Home')} onChoose={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
+  if (activeNav === 'Support') return <SimplePage title="Travel support" description="Need help with a booking? Our travel desk is available for every TicTic journey." action="Back to home" onAction={() => setActiveNav('Home')} />;
+  if (activeNav === 'Vehicles') return <VehiclesView onBack={() => setActiveNav('Home')} onChooseTrip={(trip) => { applyApiTrip(trip); setActiveNav('Tickets'); }} />;
+  if (activeNav === 'Admin' && user?.role === 'admin') return <AdminView onBack={() => setActiveNav('Home')} user={user} />;
 
   return (
     <main className="app-shell">
@@ -215,13 +227,13 @@ function App() {
           <div className="brand-mark"><Ticket size={24} strokeWidth={2.4} /><span>TicTic</span></div>
           <button className="mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu"><Menu size={20} /></button>
           <nav className={`top-nav ${menuOpen ? 'is-open' : ''}`}>
-            {['Buy Tickets', 'Search', 'Schedules', 'Trips', 'Vehicles', ...(user?.role === 'admin' ? ['Admin'] : [])].map((item, index) => (
-              <button className={index === 0 ? 'top-nav-active' : ''} key={item} onClick={() => setActiveNav(item)}>{item}</button>
+            {['Home', 'Buy Tickets', 'Search', 'Schedules', 'Trips', 'Vehicles', ...(user?.role === 'admin' ? ['Admin'] : [])].map((item) => (
+              <button className={(activeNav === item || (item === 'Buy Tickets' && activeNav === 'Tickets')) ? 'top-nav-active' : ''} key={item} onClick={() => setActiveNav(item === 'Buy Tickets' ? 'Tickets' : item)}>{item}</button>
             ))}
           </nav>
           <div className="location-chip"><MapPin size={14} /><span>Your location:</span><strong>Chennai</strong></div>
           <button className="icon-button" aria-label="Settings"><Settings size={17} /></button>
-          <button className="icon-button" aria-label="Sign out" title="Sign out" onClick={async () => { await signOut(); localStorage.removeItem('tictic_token'); localStorage.removeItem('tictic_user'); setToken(null); setUser(null); }}><LogOut size={17} /></button>
+          <button className="icon-button" aria-label="Sign out" title="Sign out" onClick={handleLogout}><LogOut size={17} /></button>
         </header>
 
         <div className="content-layout">

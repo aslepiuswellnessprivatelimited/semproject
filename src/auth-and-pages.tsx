@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BarChart3, BusFront, CalendarDays, CircleHelp, LoaderCircle, MapPin, Search, Shield, Ticket, TrendingUp, Users } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BarChart3, BusFront, CalendarDays, CalendarClock, CircleHelp, Clock3, Compass, LoaderCircle, LogOut, MapPin, Search, Settings, Shield, Ticket, TicketCheck, TrendingUp, Users, WalletCards } from 'lucide-react';
 import { FormEvent, useEffect, useState, type ReactNode } from 'react';
 import { adminCancelBooking, adminLogin, cancelBooking, getAllBookings, getAdminStats, getMyBookings, login, register, searchTrips, searchTripsByOperator, type AdminBooking, type AdminStats, type ApiBooking, type ApiTrip, type ApiUser } from '@/api';
 
@@ -78,6 +78,81 @@ export function AuthScreen({ mode, onModeChange, onAuthenticated }: AuthProps) {
   );
 }
 
+type HomeDashboardProps = {
+  user: ApiUser;
+  onSearch: (from: string, to: string) => void;
+  onNavigate: (destination: 'Trips' | 'Schedules' | 'Vehicles' | 'Admin') => void;
+  onLogout: () => void;
+};
+
+const dashboardSchedules = [
+  { route: 'Chennai → Madurai', departure: '09:30 PM', arrival: '05:30 AM', duration: '8h 00m' },
+  { route: 'Chennai → Coimbatore', departure: '08:15 PM', arrival: '05:15 AM', duration: '9h 00m' },
+  { route: 'Chennai → Trichy', departure: '10:00 PM', arrival: '04:45 AM', duration: '6h 45m' },
+];
+
+export function HomeDashboard({ user, onSearch, onNavigate, onLogout }: HomeDashboardProps) {
+  const [from, setFrom] = useState('Chennai');
+  const [to, setTo] = useState('Madurai');
+  const [journeyDate, setJourneyDate] = useState(new Date().toISOString().slice(0, 10));
+  const [bookings, setBookings] = useState<ApiBooking[]>([]);
+
+  useEffect(() => {
+    getMyBookings().then(setBookings).catch(() => setBookings([]));
+  }, []);
+
+  function submitSearch(event: FormEvent) {
+    event.preventDefault();
+    onSearch(from.trim() || 'Chennai', to.trim() || 'Madurai');
+  }
+
+  return (
+    <main className="home-page">
+      <header className="home-header">
+        <div className="auth-brand"><Ticket size={24} /><span>TicTic</span></div>
+        <nav className="home-nav">
+          <button className="home-nav-active">Home</button>
+          <button onClick={() => onSearch(from, to)}>Search</button>
+          <button onClick={() => onNavigate('Schedules')}>Schedules</button>
+          <button onClick={() => onNavigate('Trips')}>Trips</button>
+          <button onClick={() => onNavigate('Vehicles')}>Vehicles</button>
+          {user.role === 'admin' && <button onClick={() => onNavigate('Admin')}>Admin</button>}
+        </nav>
+        <div className="home-header-actions"><button className="icon-button" aria-label="Settings"><Settings size={17} /></button><button className="icon-button" aria-label="Sign out" onClick={onLogout}><LogOut size={17} /></button></div>
+      </header>
+
+      <section className="home-content">
+        <div className="home-hero home-reveal">
+          <div><p className="eyebrow">Your next journey starts here</p><h1>Hi, {user.name}</h1><p className="home-hero-copy">How can we help with your trip today?</p></div>
+          <div className="home-hero-art"><BusFront size={76} strokeWidth={1.25} /><span>Travel better. Arrive happier.</span></div>
+        </div>
+
+        <form className="dashboard-search home-reveal home-reveal-delay-1" onSubmit={submitSearch}>
+          <div className="dashboard-search-heading"><div><p className="eyebrow">Plan your journey</p><h2>Search buses</h2></div><Compass size={24} /></div>
+          <div className="dashboard-search-fields">
+            <label><span>From</span><input value={from} onChange={(event) => setFrom(event.target.value)} placeholder="Starting city" /></label>
+            <label><span>To</span><input value={to} onChange={(event) => setTo(event.target.value)} placeholder="Destination" /></label>
+            <label><span>Journey date</span><input type="date" value={journeyDate} onChange={(event) => setJourneyDate(event.target.value)} /></label>
+            <button className="dashboard-search-button"><Search size={17} /> Search buses</button>
+          </div>
+        </form>
+
+        <div className="dashboard-grid">
+          <section className="dashboard-card trips-preview home-reveal home-reveal-delay-2"><div className="dashboard-card-heading"><div><p className="eyebrow">Your travel history</p><h2>My trips</h2></div><button className="text-action" onClick={() => onNavigate('Trips')}>View all <ArrowRight size={14} /></button></div>{bookings.length === 0 ? <div className="dashboard-empty"><TicketCheck size={22} /><p>Your booked journeys will appear here.</p><button onClick={() => onSearch(from, to)}>Book your first trip</button></div> : bookings.slice(0, 2).map((booking) => <div className="dashboard-trip" key={booking.id}><div><strong>{booking.bookingReference ?? 'TicTic booking'}</strong><p>{booking.passengerName} · {booking.seatNumbers.join(', ')}</p></div><span className={`status-pill ${booking.status.toLowerCase()}`}>{booking.status}</span></div>)}</section>
+          <section className="dashboard-card home-reveal home-reveal-delay-3"><div className="dashboard-card-heading"><div><p className="eyebrow">Plan ahead</p><h2>Quick actions</h2></div><WalletCards size={22} /></div><div className="quick-actions"><button onClick={() => onSearch(from, to)}><Search size={18} /><span>Search bus</span></button><button onClick={() => onNavigate('Trips')}><TicketCheck size={18} /><span>My trips</span></button><button onClick={() => onNavigate('Schedules')}><CalendarClock size={18} /><span>Schedules</span></button><button onClick={() => onNavigate('Vehicles')}><BusFront size={18} /><span>Vehicles</span></button></div></section>
+        </div>
+
+        <div className="dashboard-grid dashboard-grid-wide">
+          <section className="dashboard-card home-reveal home-reveal-delay-4"><div className="dashboard-card-heading"><div><p className="eyebrow">Popular this week</p><h2>Popular routes</h2></div><TrendingUp size={22} /></div><div className="popular-route-list">{['Madurai', 'Coimbatore', 'Trichy', 'Bangalore'].map((destination) => <button key={destination} onClick={() => onSearch('Chennai', destination)}><span>Chennai <ArrowRight size={14} /> {destination}</span><ArrowRight size={15} /></button>)}</div></section>
+          <section className="dashboard-card schedule-preview home-reveal home-reveal-delay-5"><div className="dashboard-card-heading"><div><p className="eyebrow">Today’s departures</p><h2>Bus schedules</h2></div><button className="text-action" onClick={() => onNavigate('Schedules')}>See more <ArrowRight size={14} /></button></div>{dashboardSchedules.map((schedule) => <div className="schedule-preview-item" key={schedule.route}><div><strong>{schedule.route}</strong><p><Clock3 size={12} /> {schedule.duration}</p></div><span>{schedule.departure}<small>{schedule.arrival}</small></span></div>)}</section>
+        </div>
+
+        <section className="dashboard-info home-reveal home-reveal-delay-5"><div className="dashboard-info-icon"><CalendarDays size={23} /></div><div><p className="eyebrow">Travel smart</p><h2>Comfortable journeys across Tamil Nadu</h2><p>Choose an earlier departure for the widest seat selection, keep your booking reference ready, and arrive at the boarding point 15 minutes early.</p></div></section>
+      </section>
+    </main>
+  );
+}
+
 export function TripsView({ onBack }: { onBack: () => void }) {
   const [bookings, setBookings] = useState<ApiBooking[]>([]);
   const [error, setError] = useState('');
@@ -118,9 +193,9 @@ export function TripsView({ onBack }: { onBack: () => void }) {
   );
 }
 
-export function SchedulesView({ onBack, onChoose }: { onBack: () => void; onChoose: (trip: ApiTrip) => void }) {
-  const [from, setFrom] = useState('Chennai');
-  const [to, setTo] = useState('Madurai');
+export function SchedulesView({ onBack, onChoose, initialFrom = 'Chennai', initialTo = 'Madurai' }: { onBack: () => void; onChoose: (trip: ApiTrip) => void; initialFrom?: string; initialTo?: string }) {
+  const [from, setFrom] = useState(initialFrom);
+  const [to, setTo] = useState(initialTo);
   const [trips, setTrips] = useState<ApiTrip[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
