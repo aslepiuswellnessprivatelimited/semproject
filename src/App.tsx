@@ -133,7 +133,11 @@ function App() {
   function chooseRoute(destination: string) {
     const nextRoute = routes.find((route) => route.destination === destination) ?? routes[0];
     setActiveRoute(nextRoute);
-    searchTrips('Chennai', destination).then((trips) => trips[0] ? applyApiTrip(trips[0]) : undefined).catch(() => setSeats(createSeatArray(7, nextRoute.fare)));
+    setBookingError('');
+    searchTrips('Chennai', destination).then((trips) => {
+      if (trips[0]) applyApiTrip(trips[0]);
+      else { setBookingError('No services found for this route. Try another destination.'); setSeats(createSeatArray(7, nextRoute.fare)); }
+    }).catch(() => { setBookingError('Unable to search for trips. Please try again.'); setSeats(createSeatArray(7, nextRoute.fare)); });
   }
 
   function handleSeatClick(seat: Seat) {
