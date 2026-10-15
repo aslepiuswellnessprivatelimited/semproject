@@ -252,63 +252,203 @@ export function AdminView({ onBack, user }: { onBack: () => void; user: ApiUser 
   }
 
   const filtered = filter === 'all' ? bookings : bookings.filter((b) => b.status === filter.toUpperCase());
+  const recent = [...bookings].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 6);
+
+  const confirmedCount = stats?.confirmedBookings ?? 0;
+  const cancelledCount = stats?.cancelledBookings ?? 0;
+  const totalCount = stats?.totalBookings ?? 0;
+  const confirmedPct = totalCount > 0 ? Math.round((confirmedCount / totalCount) * 100) : 0;
+  const cancelledPct = totalCount > 0 ? Math.round((cancelledCount / totalCount) * 100) : 0;
+
+  // Route breakdown for bar chart
+  const routeCounts: Record<string, number> = {};
+  bookings.forEach((b) => {
+    const key = b.destination || 'Unknown';
+    routeCounts[key] = (routeCounts[key] ?? 0) + 1;
+  });
+  const topRoutes = Object.entries(routeCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  const maxRouteCount = topRoutes[0]?.[1] ?? 1;
+
+  // Donut chart
+  const confirmedAngle = totalCount > 0 ? (confirmedCount / totalCount) * 251.2 : 0;
 
   return (
-    <main className="simple-page">
-      <div className="simple-header">
+    <main className="admin-page">
+      <header className="admin-page-header">
         <button className="back-button" onClick={onBack}><ArrowLeft size={18} /></button>
-        <div className="auth-brand"><Shield size={23} /><span>TicTic Admin</span></div>
-      </div>
-      <div className="simple-content admin-content">
-        <p className="eyebrow">Administration panel</p>
-        <h1>Dashboard</h1>
-        <p>Welcome, {user.name}. Manage bookings and monitor platform activity.</p>
+        <div className="auth-brand"><Shield size={22} /><span>TicTic Admin</span></div>
+        <div className="admin-header-right"><span className="eyebrow">Signed in as {user.name}</span></div>
+      </header>
 
-        {error && <p className="auth-error">{error}</p>}
-        {loading && <p className="empty-state">Loading admin data…</p>}
+      <div className="admin-body">
+        {error && (
+          <div className="admin-error-banner">
+            <BarChart3 size={16} />
+            <span>{error}</span>
+            <button onClick={() => {
+              setError(''); setLoading(true);
+              Promise.all([getAllBookings(), getAdminStats()])
+                .then(([b, s]) => { setBookings(b); setStats(s); setLoading(false); })
+                .catch((r) => { setError(r instanceof Error ? r.message : 'Retry failed'); setLoading(false); });
+            }}>Retry</button>
+          </div>
+        )}
+
+        {loading && (
+          <div className="admin-loading">
+            <LoaderCircle className="spin" size={28} />
+            <p>Loading dashboard data…</p>
+          </div>
+        )}
 
         {!loading && stats && (
-          <div className="admin-stats">
-            <div className="stat-card"><div className="stat-icon stat-green"><TrendingUp size={20} /></div><div><strong>{stats.totalBookings}</strong><small>Total bookings</small></div></div>
-            <div className="stat-card"><div className="stat-icon stat-blue"><Ticket size={20} /></div><div><strong>{stats.confirmedBookings}</strong><small>Confirmed</small></div></div>
-            <div className="stat-card"><div className="stat-icon stat-amber"><BarChart3 size={20} /></div><div><strong>{stats.cancelledBookings}</strong><small>Cancelled</small></div></div>
-            <div className="stat-card"><div className="stat-icon stat-green"><CalendarDays size={20} /></div><div><strong>₹{stats.totalRevenue}</strong><small>Revenue</small></div></div>
-            <div className="stat-card"><div className="stat-icon stat-blue"><MapPin size={20} /></div><div><strong>{stats.totalRoutes}</strong><small>Routes</small></div></div>
-            <div className="stat-card"><div className="stat-icon stat-amber"><Users size={20} /></div><div><strong>{stats.totalUsers}</strong><small>Users</small></div></div>
-          </div>
-        )}
+          <>
+            {/* ── Stat cards ── */}
+            <section className="admin-stat-grid">
+              <div className="admin-stat-card admin-stat-total">
+                <div className="admin-stat-icon"><TrendingUp size={22} /></div>
+                <div><strong>{totalCount}</strong><small>Total Bookings</small></div>
+              </div>
+              <div className="admin-stat-card admin-stat-confirmed">
+                <div className="admin-stat-icon"><Ticket size={22} /></div>
+                <div><strong>{confirmedCount}</strong><small>Confirmed</small></div>
+              </div>
+              <div className="admin-stat-card admin-stat-cancelled">
+                <div className="admin-stat-icon"><Users size={22} /></div>
+                <div><strong>{cancelledCount}</strong><small>Cancelled</small></div>
+              </div>
+              <div className="admin-stat-card admin-stat-revenue">
+                <div className="admin-stat-icon"><BarChart3 size={22} /></div>
+                <div><strong>₹{Number(stats.totalRevenue).toLocaleString('en-IN')}</strong><small>Total Revenue</small></div>
+              </div>
+              <div className="admin-stat-card admin-stat-routes">
+                <div className="admin-stat-icon"><MapPin size={22} /></div>
+                <div><strong>{stats.totalRoutes}</strong><small>Active Routes</small></div>
+              </div>
+              <div className="admin-stat-card admin-stat-users">
+                <div className="admin-stat-icon"><CalendarDays size={22} /></div>
+                <div><strong>{stats.totalUsers}</strong><small>Registered Users</small></div>
+              </div>
+            </section>
 
-        {!loading && (
-          <div className="admin-bookings">
-            <div className="admin-bookings-header">
-              <h3>All bookings</h3>
-              <div className="admin-filter">
-                {(['all', 'confirmed', 'cancelled'] as const).map((f) => (
-                  <button key={f} className={filter === f ? 'filter-active' : ''} onClick={() => setFilter(f)}>{f.charAt(0).toUpperCase() + f.slice(1)}</button>
-                ))}
+            {/* ── Charts row ── */}
+            <div className="admin-charts-row">
+              {/* Donut */}
+              <div className="admin-chart-card">
+                <h3>Booking status</h3>
+                <p className="eyebrow">Confirmed vs Cancelled</p>
+                <div className="admin-donut-wrap">
+                  <svg viewBox="0 0 90 90" className="admin-donut" aria-label="Booking status donut chart">
+                    <circle cx="45" cy="45" r="40" fill="none" stroke="#e8ede6" strokeWidth="10" />
+                    <circle cx="45" cy="45" r="40" fill="none" stroke="#e3846b" strokeWidth="10"
+                      strokeDasharray={`${(cancelledCount / (totalCount || 1)) * 251.2} 251.2`}
+                      strokeDashoffset="0" transform="rotate(-90 45 45)" className="admin-donut-ring" />
+                    <circle cx="45" cy="45" r="40" fill="none" stroke="#4caf6a" strokeWidth="10"
+                      strokeDasharray={`${confirmedAngle} 251.2`}
+                      strokeDashoffset={`${-(cancelledCount / (totalCount || 1)) * 251.2}`}
+                      transform="rotate(-90 45 45)" className="admin-donut-ring" />
+                    <text x="45" y="42" textAnchor="middle" className="admin-donut-pct">{confirmedPct}%</text>
+                    <text x="45" y="52" textAnchor="middle" className="admin-donut-label">confirmed</text>
+                  </svg>
+                  <div className="admin-donut-legend">
+                    <span><i style={{ background: '#4caf6a' }} />Confirmed ({confirmedCount})</span>
+                    <span><i style={{ background: '#e3846b' }} />Cancelled ({cancelledCount})</span>
+                  </div>
+                </div>
+                <div className="admin-pct-bar">
+                  <div className="admin-pct-fill" style={{ width: `${confirmedPct}%`, background: '#4caf6a' }} />
+                  <div className="admin-pct-fill" style={{ width: `${cancelledPct}%`, background: '#e3846b' }} />
+                </div>
+                <p className="admin-pct-labels"><span>{confirmedPct}% confirmed</span><span>{cancelledPct}% cancelled</span></p>
+              </div>
+
+              {/* Bar chart – top routes */}
+              <div className="admin-chart-card admin-chart-bar-card">
+                <h3>Top destinations</h3>
+                <p className="eyebrow">Bookings by destination</p>
+                {topRoutes.length === 0 ? (
+                  <p className="empty-state" style={{ marginTop: 20 }}>No booking data yet.</p>
+                ) : (
+                  <div className="admin-bar-chart">
+                    {topRoutes.map(([dest, count]) => (
+                      <div className="admin-bar-row" key={dest}>
+                        <span className="admin-bar-label">{dest}</span>
+                        <div className="admin-bar-track">
+                          <div className="admin-bar-fill" style={{ width: `${(count / maxRouteCount) * 100}%` }} />
+                        </div>
+                        <span className="admin-bar-value">{count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Recent activity */}
+              <div className="admin-chart-card">
+                <h3>Recent bookings</h3>
+                <p className="eyebrow">Last {recent.length} transactions</p>
+                <div className="admin-recent-list">
+                  {recent.length === 0 && <p className="empty-state">No bookings yet.</p>}
+                  {recent.map((b) => (
+                    <div className="admin-recent-item" key={b.id}>
+                      <div className="admin-recent-dot" data-status={b.status.toLowerCase()} />
+                      <div>
+                        <strong>{b.passengerName}</strong>
+                        <p>{b.origin} → {b.destination}</p>
+                        <small>{b.bookingReference} · ₹{b.totalAmount}</small>
+                      </div>
+                      <span className={`status-pill ${b.status.toLowerCase()}`}>{b.status}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-            {filtered.length === 0 ? <p className="empty-state">No bookings to show.</p> : (
-              <div className="trip-list">
-                {filtered.map((booking) => (
-                  <article className="trip-item admin-trip-item" key={booking.id}>
-                    <div>
-                      <span className="eyebrow">{booking.bookingReference}</span>
-                      <h3>{booking.passengerName}</h3>
-                      <p>{booking.origin} → {booking.destination} · {booking.operatorName}</p>
-                      <p>{booking.seatNumbers.join(', ')} · ₹{booking.totalAmount} · {booking.phone}</p>
-                    </div>
-                    <div className="trip-actions">
-                      <span className={`status-pill ${booking.status.toLowerCase()}`}>{booking.status}</span>
-                      {booking.status !== 'CANCELLED' && <button onClick={() => cancel(booking.id)}>Cancel</button>}
-                    </div>
-                  </article>
-                ))}
+
+            {/* ── Booking table ── */}
+            <div className="admin-table-card">
+              <div className="admin-bookings-header">
+                <h3>All bookings</h3>
+                <div className="admin-filter">
+                  {(['all', 'confirmed', 'cancelled'] as const).map((f) => (
+                    <button key={f} className={filter === f ? 'filter-active' : ''} onClick={() => setFilter(f)}>
+                      {f.charAt(0).toUpperCase() + f.slice(1)}
+                    </button>
+                  ))}
+                </div>
               </div>
-            )}
-          </div>
+              {filtered.length === 0 ? (
+                <p className="empty-state">No bookings to show.</p>
+              ) : (
+                <div className="admin-table-scroll">
+                  <table className="admin-table">
+                    <thead>
+                      <tr><th>Reference</th><th>Passenger</th><th>Route</th><th>Operator</th><th>Seats</th><th>Amount</th><th>Date</th><th>Status</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((booking) => (
+                        <tr key={booking.id}>
+                          <td className="admin-td-ref">{booking.bookingReference}</td>
+                          <td><strong>{booking.passengerName}</strong><br /><small>{booking.phone}</small></td>
+                          <td>{booking.origin} → {booking.destination}</td>
+                          <td>{booking.operatorName}</td>
+                          <td>{booking.seatNumbers.join(', ')}</td>
+                          <td>₹{booking.totalAmount}</td>
+                          <td><small>{new Date(booking.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</small></td>
+                          <td><span className={`status-pill ${booking.status.toLowerCase()}`}>{booking.status}</span></td>
+                          <td>{booking.status !== 'CANCELLED' && <button className="admin-cancel-btn" onClick={() => cancel(booking.id)}>Cancel</button>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
         )}
-        <button className="modal-button" onClick={onBack}>Back to tickets <ArrowRight size={16} /></button>
+
+        <button className="modal-button" style={{ marginTop: 28 }} onClick={onBack}>Back to home <ArrowRight size={16} /></button>
       </div>
     </main>
   );

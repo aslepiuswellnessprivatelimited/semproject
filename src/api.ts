@@ -200,7 +200,13 @@ export async function cancelBooking(id: string): Promise<ApiBooking> {
   };
 }
 
+async function refreshSession(): Promise<void> {
+  const { error } = await supabase.auth.refreshSession();
+  if (error) throw new Error('Session expired. Please sign in again.');
+}
+
 export async function getAllBookings(): Promise<AdminBooking[]> {
+  await refreshSession();
   const { data, error } = await supabase.rpc('get_all_bookings');
   if (error) throw new Error(friendlyMessage(error, 'Unable to load bookings. Admin access required.'));
   if (!data) return [];
@@ -222,11 +228,13 @@ export async function getAllBookings(): Promise<AdminBooking[]> {
 }
 
 export async function adminCancelBooking(id: string): Promise<void> {
+  await refreshSession();
   const { error } = await supabase.rpc('admin_cancel_booking', { p_booking_id: id });
   if (error) throw new Error(friendlyMessage(error, 'Unable to cancel booking.'));
 }
 
 export async function getAdminStats(): Promise<AdminStats> {
+  await refreshSession();
   const { data, error } = await supabase.rpc('get_admin_stats');
   if (error) throw new Error(friendlyMessage(error, 'Unable to load stats. Admin access required.'));
   return data as unknown as AdminStats;
