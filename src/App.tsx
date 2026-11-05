@@ -24,10 +24,11 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
-import { createBooking, getSeats, restoreSession, saveSession, signOut, searchTrips, type ApiTrip, type ApiUser } from '@/api';
+import { createBooking, getSeats, restoreSession, saveSession, signOut, searchTrips, type AdditionalPassenger, type ApiTrip, type ApiUser } from '@/api';
 import { AdminView, AuthScreen, HomeDashboard, SchedulesView, SimplePage, TripsView, VehiclesView } from '@/auth-and-pages';
 import { createSeatArray, countAvailableSeats, toggleSeat, type Seat } from '@/utils/seatArray';
 import { getBusTypeFeatures } from '@/utils/busType';
+import AdditionalPassengersModal from '@/components/AdditionalPassengersModal';
 import { LogOut, AlertCircle } from 'lucide-react';
 
 const routes = [
@@ -121,6 +122,7 @@ function App() {
   const [ticketDetails, setTicketDetails] = useState<TicketDetails | null>(null);
   const [bookingError, setBookingError] = useState('');
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [passengerModalOpen, setPassengerModalOpen] = useState(false);
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
@@ -149,6 +151,8 @@ function App() {
   const discount = selectedSeats.length >= 2 ? 120 : 0;
   const total = subtotal + serviceCharge + tax - discount;
   const busFeatures = getBusTypeFeatures(activeRoute.type);
+  const primaryPassengerName = passengerName.trim() || user?.name.trim() || '';
+  const primaryDetailsValid = selectedSeats.length > 0 && primaryPassengerName.length >= 2 && phone.replace(/\D/g, '').length === 10 && !!user;
 
   function applyApiTrip(trip: ApiTrip) {
     const nextRoute = { id: trip.id, origin: trip.origin, destination: trip.destination, operator: trip.operatorName, service: trip.serviceNumber, type: trip.busType, departure: trip.departure, arrival: trip.arrival, duration: trip.duration, fare: trip.fare, boarding: trip.boardingPoints[0] ?? `${trip.origin} Bus Stand`, dropping: trip.droppingPoints[0] ?? `${trip.destination} Bus Stand` };
@@ -182,14 +186,25 @@ function App() {
     setActiveNav('Home');
   }
 
-  async function handleBook() {
+  function handleBuyClick() {
+    if (!primaryDetailsValid) return;
+    if (selectedSeats.length > 1) {
+      setBookingError('');
+      setPassengerModalOpen(true);
+      return;
+    }
+    handleBook([]);
+  }
+
+  async function handleBook(additionalPassengers: AdditionalPassenger[]) {
     const bookingPassengerName = passengerName.trim() || user?.name.trim() || '';
     if (selectedSeats.length === 0 || bookingPassengerName.length < 2 || phone.replace(/\D/g, '').length !== 10 || !user) return;
     if (!activeTripId) { setBookingError('Please wait for the trip to load, then try again.'); return; }
     setBookingError('');
     setBookingLoading(true);
     try {
-      const booking = await createBooking({ tripId: activeTripId, seatNumbers: selectedSeats.map((seat) => seat.seatNumber), passengerName: bookingPassengerName, phone: phone.replace(/\D/g, '') });
+      const booking = await createBooking({ tripId: activeTripId, seatNumbers: selectedSeats.map((seat) => seat.seatNumber), passengerName: bookingPassengerName, phone: phone.replace(/\D/g, ''), additionalPassengers });
+      setPassengerModalOpen(false);
       setBookingMessage(`Booking ${booking.bookingReference} confirmed for seats ${booking.seatNumbers.join(', ')}. Total: ₹${booking.totalAmount}`);
       setTicketDetails({ bookingReference: booking.bookingReference, passengerName: bookingPassengerName, phone: phone.replace(/\D/g, ''), seatNumbers: booking.seatNumbers, totalAmount: booking.totalAmount, origin: activeRoute.origin, destination: activeRoute.destination, operatorName: activeRoute.operator, departure: activeRoute.departure, arrival: activeRoute.arrival });
       setShowConfirmation(true);
@@ -312,7 +327,7 @@ function App() {
             <div className="booking-body">
               <div className="seat-section">
                 <div className="bus-type-chips"><span className={`bus-type-chip ${busFeatures.ac ? 'bus-type-chip-ac' : 'bus-type-chip-nonac'}`}>{busFeatures.ac ? <Snowflake size={11} /> : <Wind size={11} />}{busFeatures.ac ? 'AC' : 'Non-AC'}</span><span className="bus-type-chip bus-type-chip-sleeper">{busFeatures.sleeper ? <BedDouble size={11} /> : <Armchair size={11} />}{busFeatures.sleeper ? 'Sleeper' : 'Seater'}</span></div><div className="seat-header"><span>Front of bus</span><Gauge size={17} /></div>
-                <div className="seat-grid">{seats.map((seat) => <button key={seat.seatNumber} className={`seat ${seat.status}`} onClick={() => handleSeatClick(seat)} disabled={seat.status === 'sold' || seat.status === 'blocked'} aria-label={`${seat.seatNumber}, ${seat.status}`} title={`${seat.seatNumber} · ₹${seat.fare} · ${seat.status}`}><span>{seat.seatNumber.replace('C', '')}</span></button>)}</div>
+                <div className="seat-grid">{seats.map((seat) => <button key={seat.seatNumber} className={`seat ${seat.status}`} onClick={() => handleSeatClick(seat)} disabled={seat.status === 'sold' || seat.status === 'blocked'} aria-label={`${seat.seatNumber}, ${seat.status}`} title={`${seat.seatNumber} · ₹${seat.fare} · ${seat.status}`}><span>{seat.seatNumber.replace('C', '')}</span><small>{busFeatures.sleeper ? 'Sleeper' : 'Seater'}</small></button>)}</div>
                 <div className="driver-label"><BusFront size={14} /> Driver</div>
               </div>
               <div className="fare-summary">
@@ -326,7 +341,7 @@ function App() {
                 <div className="summary-item summary-total"><strong>₹{total}</strong><small>Total Payable</small></div>
               </div>
             </div>
-            <div className="checkout-row"><label className="phone-input"><span>Passenger Name</span><input value={passengerName} onChange={(event) => setPassengerName(event.target.value)} placeholder={user?.name ?? 'Full name'} /></label><label className="phone-input"><span>Passenger's Contact Number</span><input value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit number" inputMode="numeric" /></label><button className="buy-button" onClick={handleBook} disabled={bookingLoading || !activeTripId}>{bookingLoading ? 'Booking…' : 'Buy Now'} <ArrowRight size={17} /></button></div>
+            <div className="checkout-row"><label className="phone-input"><span>Passenger Name</span><input value={passengerName} onChange={(event) => setPassengerName(event.target.value)} placeholder={user?.name ?? 'Full name'} /></label><label className="phone-input"><span>Passenger's Contact Number</span><input value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit number" inputMode="numeric" /></label><button className="buy-button" onClick={handleBuyClick} disabled={bookingLoading || !activeTripId}>{bookingLoading ? 'Booking…' : 'Buy Now'} <ArrowRight size={17} /></button></div>
             {selectedSeats.length === 0 && <p className="form-hint">Choose up to 6 seats to continue</p>}
             {phone.length > 0 && phone.length !== 10 && <p className="form-error">Enter a valid 10-digit contact number</p>}
             {selectedSeats.length > 0 && passengerName.trim().length < 2 && <p className="form-error">Enter the passenger name before booking</p>}
@@ -336,6 +351,7 @@ function App() {
         </div>
       </section>
 
+      {passengerModalOpen && <AdditionalPassengersModal seatNumbers={selectedSeats.slice(1).map((seat) => seat.seatNumber)} loading={bookingLoading} error={bookingError} onConfirm={handleBook} onClose={() => setPassengerModalOpen(false)} />}
       {showConfirmation && <div className="modal-backdrop" onClick={() => setShowConfirmation(false)}><div className="confirmation-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setShowConfirmation(false)} aria-label="Close"><X size={18} /></button><div className="success-icon"><Check size={28} /></div><p className="eyebrow">Reservation ready</p><h2>Your seats are held.</h2><p>{bookingMessage}</p><div className="confirmation-actions"><button className="modal-button modal-button-secondary" onClick={printTicket}><Printer size={16} /> Print ticket</button><button className="modal-button" onClick={() => setShowConfirmation(false)}>Done <ArrowRight size={16} /></button></div></div></div>}
     </main>
   );

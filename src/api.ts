@@ -8,7 +8,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export interface ApiUser { id: string; name: string; email: string; role: string; phone: string }
 export interface ApiTrip { id: string; origin: string; destination: string; duration: string; operatorName: string; serviceNumber: string; busType: string; departure: string; arrival: string; fare: number; availableSeats: number; boardingPoints: string[]; droppingPoints: string[] }
 export interface ApiSeat { seatNumber: string; status: 'AVAILABLE' | 'BOOKED' | 'BLOCKED'; passengerName: string | null; fare: number }
-export interface ApiBooking { id: string; bookingReference: string; tripId: string; seatNumbers: string[]; passengerName: string; phone: string; totalAmount: number; status: string; createdAt: string }
+export interface ApiBookingTrip { origin: string; destination: string; operatorName: string; serviceNumber: string; departure: string; arrival: string; journeyDate: string }
+export interface ApiBooking { id: string; bookingReference: string; tripId: string; seatNumbers: string[]; passengerName: string; phone: string; totalAmount: number; status: string; createdAt: string; trip?: ApiBookingTrip }
+export interface AdditionalPassenger { name: string; age: number }
 export interface AdminBooking { id: string; bookingReference: string; userId: string; tripId: string; origin: string; destination: string; operatorName: string; seatNumbers: string[]; passengerName: string; phone: string; totalAmount: number; status: string; createdAt: string }
 export interface AdminStats { totalBookings: number; confirmedBookings: number; cancelledBookings: number; totalRevenue: number; totalTrips: number; totalRoutes: number; totalUsers: number }
 
@@ -139,12 +141,13 @@ export async function getSeats(tripId: string): Promise<{ tripId: string; seats:
   return { tripId, seats, availableCount: seats.filter((s) => s.status === 'AVAILABLE').length };
 }
 
-export async function createBooking(payload: { tripId: string; seatNumbers: string[]; passengerName: string; phone: string }): Promise<ApiBooking> {
+export async function createBooking(payload: { tripId: string; seatNumbers: string[]; passengerName: string; phone: string; additionalPassengers: AdditionalPassenger[] }): Promise<ApiBooking> {
   const { data, error } = await supabase.rpc('book_trip', {
     p_trip_id: payload.tripId,
     p_seat_numbers: payload.seatNumbers,
     p_passenger_name: payload.passengerName,
     p_phone: payload.phone,
+    p_additional_passengers: payload.additionalPassengers,
   });
   if (error) throw new Error(friendlyMessage(error, 'Unable to complete booking. Please try again.'));
   const row = data as unknown as Record<string, unknown>;
@@ -164,23 +167,35 @@ export async function createBooking(payload: { tripId: string; seatNumbers: stri
 export async function getMyBookings(): Promise<ApiBooking[]> {
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, booking_reference, trip_id, seat_numbers, passenger_name, phone, total_amount, status, created_at')
+    .select('id, booking_reference, trip_id, seat_numbers, passenger_name, phone, total_amount, status, created_at, trips(operator_name, service_number, departure, arrival, journey_date, routes(origin, destination))')
     .order('created_at', { ascending: false });
 
   if (error) throw error;
   if (!data || data.length === 0) return [];
 
-  return data.map((row) => ({
-    id: row.id as string,
-    bookingReference: row.booking_reference as string,
-    tripId: row.trip_id as string,
-    seatNumbers: row.seat_numbers as string[],
-    passengerName: row.passenger_name as string,
-    phone: row.phone as string,
-    totalAmount: Number(row.total_amount),
-    status: (row.status as string).toUpperCase(),
-    createdAt: row.created_at as string,
-  }));
+  return data.map((row) => {
+    const trip = row.trips as unknown as { operator_name: string; service_number: string; departure: string; arrival: string; journey_date: string; routes: { origin: string; destination: string } | null } | null;
+    return {
+      id: row.id as string,
+      bookingReference: row.booking_reference as string,
+      tripId: row.trip_id as string,
+      seatNumbers: row.seat_numbers as string[],
+      passengerName: row.passenger_name as string,
+      phone: row.phone as string,
+      totalAmount: Number(row.total_amount),
+      status: (row.status as string).toUpperCase(),
+      createdAt: row.created_at as string,
+      trip: trip?.routes ? {
+        origin: trip.routes.origin,
+        destination: trip.routes.destination,
+        operatorName: trip.operator_name,
+        serviceNumber: trip.service_number,
+        departure: trip.departure,
+        arrival: trip.arrival,
+        journeyDate: trip.journey_date,
+      } : undefined,
+    };
+  });
 }
 
 export async function cancelBooking(id: string): Promise<ApiBooking> {

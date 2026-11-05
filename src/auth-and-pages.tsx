@@ -181,6 +181,13 @@ export function TripsView({ onBack }: { onBack: () => void }) {
               <span className="eyebrow">{booking.bookingReference ?? booking.id}</span>
               <h3>{booking.passengerName}</h3>
               <p>{booking.seatNumbers.join(', ')} · ₹{booking.totalAmount}</p>
+              {booking.trip && (
+                <div className="trip-route">
+                  <strong><MapPin size={14} /> {booking.trip.origin} → {booking.trip.destination}</strong>
+                  <small>{booking.trip.operatorName} · {booking.trip.serviceNumber}</small>
+                  <small><Clock3 size={13} /> {new Date(`${booking.trip.journeyDate}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} · {booking.trip.departure} → {booking.trip.arrival}</small>
+                </div>
+              )}
             </div>
             <div className="trip-actions">
               <span className={`status-pill ${booking.status.toLowerCase()}`}>{booking.status}</span>
