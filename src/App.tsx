@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  Armchair,
+  BedDouble,
   BusFront,
   CalendarDays,
   Check,
@@ -15,14 +17,17 @@ import {
   Printer,
   Search,
   Settings,
+  Snowflake,
   Ticket,
   UsersRound,
+  Wind,
   WalletCards,
   X,
 } from 'lucide-react';
 import { createBooking, getSeats, restoreSession, saveSession, signOut, searchTrips, type ApiTrip, type ApiUser } from '@/api';
 import { AdminView, AuthScreen, HomeDashboard, SchedulesView, SimplePage, TripsView, VehiclesView } from '@/auth-and-pages';
 import { createSeatArray, countAvailableSeats, toggleSeat, type Seat } from '@/utils/seatArray';
+import { getBusTypeFeatures } from '@/utils/busType';
 import { LogOut, AlertCircle } from 'lucide-react';
 
 const routes = [
@@ -143,6 +148,7 @@ function App() {
   const tax = Math.round(subtotal * 0.05);
   const discount = selectedSeats.length >= 2 ? 120 : 0;
   const total = subtotal + serviceCharge + tax - discount;
+  const busFeatures = getBusTypeFeatures(activeRoute.type);
 
   function applyApiTrip(trip: ApiTrip) {
     const nextRoute = { id: trip.id, origin: trip.origin, destination: trip.destination, operator: trip.operatorName, service: trip.serviceNumber, type: trip.busType, departure: trip.departure, arrival: trip.arrival, duration: trip.duration, fare: trip.fare, boarding: trip.boardingPoints[0] ?? `${trip.origin} Bus Stand`, dropping: trip.droppingPoints[0] ?? `${trip.destination} Bus Stand` };
@@ -305,7 +311,7 @@ function App() {
             <div className="select-row"><label><span>Boarding Point</span><button>{activeRoute.boarding}<ChevronDown size={14} /></button></label><label><span>Dropping Point</span><button>{activeRoute.dropping}<ChevronDown size={14} /></button></label></div>
             <div className="booking-body">
               <div className="seat-section">
-                <div className="seat-header"><span>Front of bus</span><Gauge size={17} /></div>
+                <div className="bus-type-chips"><span className={`bus-type-chip ${busFeatures.ac ? 'bus-type-chip-ac' : 'bus-type-chip-nonac'}`}>{busFeatures.ac ? <Snowflake size={11} /> : <Wind size={11} />}{busFeatures.ac ? 'AC' : 'Non-AC'}</span><span className="bus-type-chip bus-type-chip-sleeper">{busFeatures.sleeper ? <BedDouble size={11} /> : <Armchair size={11} />}{busFeatures.sleeper ? 'Sleeper' : 'Seater'}</span></div><div className="seat-header"><span>Front of bus</span><Gauge size={17} /></div>
                 <div className="seat-grid">{seats.map((seat) => <button key={seat.seatNumber} className={`seat ${seat.status}`} onClick={() => handleSeatClick(seat)} disabled={seat.status === 'sold' || seat.status === 'blocked'} aria-label={`${seat.seatNumber}, ${seat.status}`} title={`${seat.seatNumber} · ₹${seat.fare} · ${seat.status}`}><span>{seat.seatNumber.replace('C', '')}</span></button>)}</div>
                 <div className="driver-label"><BusFront size={14} /> Driver</div>
               </div>
